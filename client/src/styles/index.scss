@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #301f21; font-synthesis: none; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; }
+button, a, input, select, textarea { outline-color: #CE2626; }
+button, a { transition: all .2s ease; }
+
+@layer components {
+  .eyebrow { @apply text-xs font-bold uppercase tracking-[.22em] text-clay; }
+  .button-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-clay px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-clay/15 hover:-translate-y-0.5 hover:bg-forest disabled:cursor-wait disabled:opacity-60; }
+  .button-secondary { @apply inline-flex items-center justify-center rounded-full border border-clay/20 bg-white/70 px-6 py-3 text-sm font-semibold text-forest hover:bg-sand; }
+  .input-shell { @apply flex items-center gap-3 rounded-2xl border border-forest/10 bg-white/60 px-4 py-3 text-forest shadow-sm; }
+  .input-shell input, .input-shell select { @apply min-w-0 flex-1 bg-transparent text-sm outline-none; }
+  .admin-input { @apply block w-full rounded-xl border border-forest/10 bg-white px-4 py-3 font-normal text-ink outline-none focus:border-moss focus:ring-2 focus:ring-moss/10; }
+  .admin-icon { @apply grid size-9 place-items-center rounded-full bg-forest/5 text-forest hover:bg-forest hover:text-white; }
+}
+
+.hero { position: relative; overflow: hidden; }
+.hero--photo { background: transparent; }
+.hero::after { display: none; }
+.hero__art { position: absolute; inset: 0 0 0 38%; background: url('/images/family-tree-hero.png') center/cover no-repeat; mask-image: linear-gradient(to right, transparent 0, black 23%, black 100%); opacity: .95; }
+.hero-carousel-shell { position: relative; padding: clamp(10px, 1.5vw, 22px); border: 1px solid rgba(48,31,33,.08); border-radius: 2.8rem; background: #fff; box-shadow: 0 32px 100px rgba(48,31,33,.09); }
+.hero-carousel { position: relative; min-height: 740px; overflow: hidden; border-radius: 2.15rem; background: #f7f7f7; }
+.hero-carousel img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: none; }
+.hero-carousel__controls { position: absolute; left: 50%; bottom: clamp(1.4rem, 3vw, 2.5rem); z-index: 2; display: flex; align-items: center; gap: 14px; width: max-content; max-width: calc(100% - 3rem); transform: translateX(-50%); border: 1px solid rgba(255,255,255,.45); border-radius: 999px; background: rgba(255,255,255,.72); padding: 10px; color: #7f1d1d; box-shadow: 0 16px 45px rgba(48,31,33,.13); backdrop-filter: blur(16px); }
+.hero-carousel__controls button { display: grid; min-width: 12px; height: 36px; place-items: center; border-radius: 999px; }
+.hero-carousel__controls > button { width: 36px; background: rgba(206,38,38,.08); }
+.hero-carousel__controls > button:hover { background: rgba(206,38,38,.18); }
+.hero-carousel__controls .flex button { width: 9px; height: 9px; min-width: 9px; background: rgba(206,38,38,.22); padding: 0; }
+.hero-carousel__controls .flex button.is-active { width: 26px; background: #CE2626; }
+.hero-carousel__meta { display: flex; align-items: center; gap: 12px; padding: 16px 10px 2px; color: rgba(48,31,33,.45); font-size: 11px; font-weight: 800; letter-spacing: .18em; }
+.hero-carousel__meta div { height: 1px; flex: 1; background: rgba(48,31,33,.12); }
+
+.admin-login { position: relative; overflow: hidden; background: radial-gradient(circle at 76% 28%, rgba(194,71,75,.2), transparent 25%), radial-gradient(circle at 20% 78%, rgba(143,38,50,.18), transparent 28%), #fff7f3; }
+.admin-login::before { content: ''; position: absolute; inset: 0 50% 0 0; background: url('/images/rodriguez_clan.jpg') 62% center/cover no-repeat; opacity: .16; mask-image: linear-gradient(to right, black, transparent); }
+.admin-login__field { display: flex; align-items: center; gap: 12px; border: 1px solid rgba(74,16,24,.12); border-radius: 14px; background: rgba(255,247,243,.75); padding: 0 15px; color: #8f2632; }
+.admin-login__field:focus-within { border-color: #8f2632; box-shadow: 0 0 0 3px rgba(143,38,50,.1); }
+.admin-login__field input { width: 100%; padding: 13px 0; background: transparent; color: #301f21; outline: none; }
+
+.tree-canvas { height: calc(100vh - 245px); min-height: 580px; overflow: hidden; border: 1px solid rgba(74,16,24,.1); border-radius: 2rem; background: rgba(255,255,255,.52); box-shadow: 0 25px 80px rgba(74,16,24,.08); }
+.home-tree { background: transparent; }
+.tree-canvas--featured { height: 680px; border-color: rgba(194,71,75,.24); background: rgba(255,255,255,.72); box-shadow: 0 30px 90px rgba(74,16,24,.12); }
+.person-node { display: flex; align-items: center; gap: 12px; width: 230px; min-height: 104px; padding: 14px; border: 1px solid rgba(74,16,24,.12); border-radius: 22px; background: rgba(255,255,255,.96); box-shadow: 0 12px 28px rgba(74,16,24,.12); cursor: pointer; transition: .2s ease; }
+.person-node:hover, .person-node--selected { transform: translateY(-3px); border-color: #CE2626; box-shadow: 0 18px 38px rgba(74,16,24,.18); }
+.person-node__portrait { position: relative; display: grid; place-items: center; width: 62px; height: 70px; flex: 0 0 62px; overflow: visible; border-radius: 17px; background: linear-gradient(145deg,#CE2626,#7f1d1d); color: white; font-family: Georgia,serif; font-size: 23px; }
+.person-node__portrait img { width: 100%; height: 100%; object-fit: cover; border-radius: 17px; }
+.person-node__portrait i { position: absolute; right: -5px; bottom: -5px; display: grid; width: 24px; height: 24px; place-items: center; border: 3px solid white; border-radius: 50%; background: #CE2626; color: white; }
+.person-node strong { display: block; max-width: 125px; overflow: hidden; color: #4a1018; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.person-node small, .person-node em { display: block; margin-top: 4px; color: rgba(48,31,33,.5); font-size: 10px; font-style: normal; }
+.person-node em { color: #CE2626; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.react-flow__handle { width: 8px !important; height: 8px !important; border: 2px solid white !important; background: #8f2632 !important; }
+.react-flow__controls { overflow: hidden; border: 0 !important; border-radius: 12px !important; box-shadow: 0 8px 25px rgba(74,16,24,.13) !important; }
+.react-flow__minimap { overflow: hidden; border: 1px solid rgba(74,16,24,.1); border-radius: 14px; }
+
+@media (max-width: 1023px) {
+  .hero__art { inset: 20% -30% 0 20%; opacity: .3; mask-image: linear-gradient(to bottom, transparent, black 30%); }
+  .hero-carousel { min-height: 620px; }
+}
+@media (max-width: 640px) {
+  .hero-carousel-shell { border-radius: 1.8rem; padding: 8px; }
+  .hero-carousel { min-height: 520px; border-radius: 1.35rem; }
+  .hero-carousel__controls { bottom: 1rem; gap: 9px; max-width: calc(100% - 1.5rem); }
+  .tree-canvas { min-height: 620px; height: 70vh; border-radius: 1.4rem; }
+  .react-flow__minimap { display: none; }
+}
