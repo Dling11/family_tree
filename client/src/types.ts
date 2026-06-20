@@ -41,3 +41,11 @@ export interface DashboardImage {
   sortOrder?: number;
   isActive?: boolean;
 }
+
+export interface FamilyGroup {
+  _id: string;
+  name: string;
+  description?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}

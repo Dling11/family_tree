@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { authRouter } from './routes/authRoutes.js';
 import { dashboardImageRouter } from './routes/dashboardImageRoutes.js';
+import { familyGroupRouter } from './routes/familyGroupRoutes.js';
 import { memberRouter } from './routes/memberRoutes.js';
 
 export const app = express();
@@ -16,6 +17,7 @@ app.use(morgan('dev'));
 app.get('/api/health', (_request, response) => response.json({ status: 'ok' }));
 app.use('/api/auth', authRouter);
 app.use('/api/dashboard-images', dashboardImageRouter);
+app.use('/api/family-groups', familyGroupRouter);
 app.use('/api/members', memberRouter);
 app.use((_request, response) => response.status(404).json({ message: 'Route not found' }));
 app.use((error: Error & { status?: number; code?: number }, _request: Request, response: Response, _next: NextFunction) => {

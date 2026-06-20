@@ -1,18 +1,55 @@
 import { ArrowLeft, ImagePlus, Images, LockKeyhole, LogOut, Pencil, Plus, Search, Sprout, Trash2, UserRound, Users, X } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { createDashboardImage, createMember, deleteDashboardImage, deleteMember, hasAdminSession, loginAdmin, logoutAdmin, updateMember } from '../api';
+import { createDashboardImage, createFamilyGroup, createMember, deleteDashboardImage, deleteMember, hasAdminSession, loginAdmin, logoutAdmin, updateMember } from '../api';
 import { useAdminDashboardImages } from '../hooks/useDashboardImages';
 import { useAdminMembers } from '../hooks/useAdminMembers';
-import type { DashboardImage, FamilyMember } from '../types';
+import { useFamilyGroups } from '../hooks/useFamilyGroups';
+import type { DashboardImage, FamilyGroup, FamilyMember } from '../types';
 
 type FormState = Partial<FamilyMember> & { image?: File };
+type QuickMemberDraft = Pick<FamilyMember, 'firstName' | 'lastName'> & Partial<Pick<FamilyMember, 'branch' | 'generation'>>;
 const emptyForm: FormState = { firstName: '', lastName: '', parentIds: [], spouseIds: [], isLiving: true, generation: 1 };
+const fullName = (member: FamilyMember) => `${member.firstName} ${member.lastName}`;
+type AdminMemberGroup = { id: string; members: FamilyMember[] };
 
-function MemberForm({ members, initial, onClose, onSaved }: { members: FamilyMember[]; initial?: FamilyMember; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<FormState>(initial || emptyForm);
+const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
+const sortMembers = (first: FamilyMember, second: FamilyMember) => (first.generation || 99) - (second.generation || 99) || fullName(first).localeCompare(fullName(second));
+const pickGroupAnchor = (group: FamilyMember[]) => [...group].sort((first, second) => {
+  if (first.parentIds.length !== second.parentIds.length) return second.parentIds.length - first.parentIds.length;
+  if ((first.branch === 'Rodriguez') !== (second.branch === 'Rodriguez')) return first.branch === 'Rodriguez' ? -1 : 1;
+  return sortMembers(first, second);
+})[0]!;
+
+function MemberAvatar({ member }: { member: FamilyMember }) {
+  return (
+    <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-moss font-display text-white">
+      {member.profileImage ? <img src={member.profileImage} className="h-full w-full object-cover" /> : initials(member)}
+    </div>
+  );
+}
+
+function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, onFamilyGroupSaved }: { members: FamilyMember[]; familyGroups: FamilyGroup[]; initial?: FamilyMember; preset?: FormState; onClose: () => void; onSaved: () => void; onFamilyGroupSaved: () => void }) {
+  const [form, setForm] = useState<FormState>(initial || preset || emptyForm);
+  const [availableMembers, setAvailableMembers] = useState(members);
   const [saving, setSaving] = useState(false);
+  const [imagePreview, setImagePreview] = useState(initial?.profileImage || '');
   const set = (field: keyof FormState, value: unknown) => setForm((current) => ({ ...current, [field]: value }));
+
+  useEffect(() => {
+    setAvailableMembers(members);
+  }, [members]);
+
+  useEffect(() => {
+    if (!form.image) {
+      setImagePreview(initial?.profileImage || '');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(form.image);
+    setImagePreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [form.image, initial?.profileImage]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,51 +69,241 @@ function MemberForm({ members, initial, onClose, onSaved }: { members: FamilyMem
     }
   };
 
+  const createRelatedMember = async (draft: QuickMemberDraft, relation: 'parentIds' | 'spouseIds') => {
+    const payload = new FormData();
+    payload.append('firstName', draft.firstName);
+    payload.append('lastName', draft.lastName);
+    payload.append('isLiving', 'true');
+    if (draft.branch) payload.append('branch', draft.branch);
+    if (draft.generation) payload.append('generation', String(draft.generation));
+
+    const member = await createMember(payload);
+    setAvailableMembers((current) => [...current, member]);
+    setForm((current) => ({ ...current, [relation]: [...(current[relation] || []), member._id] }));
+    return member;
+  };
+
+  const addFamilyGroup = async (name: string) => {
+    const group = await createFamilyGroup(name);
+    set('branch', group.name);
+    onFamilyGroupSaved();
+    return group;
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-forest/45 backdrop-blur-sm" onMouseDown={onClose}>
       <form onSubmit={submit} onMouseDown={(e) => e.stopPropagation()} className="h-full w-full max-w-2xl overflow-y-auto bg-cream p-6 shadow-2xl sm:p-10">
         <div className="mb-8 flex items-center justify-between">
-          <div><p className="eyebrow">{initial ? 'Update story' : 'New branch'}</p><h2 className="mt-2 font-display text-3xl text-forest">{initial ? 'Edit family member' : 'Add family member'}</h2></div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.12em] text-ink/45">{initial ? 'Update member' : 'New member'}</p>
+            <h2 className="mt-2 text-2xl font-bold text-ink">{initial ? 'Edit family member' : 'Add family member'}</h2>
+          </div>
           <button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full bg-white"><X /></button>
         </div>
         <label className="mb-7 flex cursor-pointer items-center gap-4 rounded-2xl border border-dashed border-moss/40 bg-white/50 p-5">
-          <span className="grid size-14 place-items-center rounded-xl bg-sand text-forest"><ImagePlus /></span>
-          <span><strong className="block text-sm">Upload profile photo</strong><small className="text-ink/45">{form.image?.name || 'JPG, PNG or WebP up to 5MB'}</small></span>
+          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-2xl bg-sand text-forest">
+            {imagePreview ? <img src={imagePreview} alt="Profile preview" className="h-full w-full object-cover" /> : <ImagePlus />}
+          </span>
+          <span><strong className="block text-sm text-ink">Upload profile photo</strong><small className="text-ink/45">{form.image?.name || 'JPG, PNG or WebP up to 5MB'}</small></span>
           <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => set('image', e.target.files?.[0])} />
         </label>
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="First name" required value={form.firstName} onChange={(v) => set('firstName', v)} />
-          <Field label="Last name" required value={form.lastName} onChange={(v) => set('lastName', v)} />
-          <Field label="Middle name" value={form.middleName} onChange={(v) => set('middleName', v)} />
-          <Field label="Nickname" value={form.nickname} onChange={(v) => set('nickname', v)} />
+          <Field label="First name" required value={form.firstName} placeholder="Example: Rowell" onChange={(v) => set('firstName', v)} />
+          <Field label="Last name" required value={form.lastName} placeholder="Example: Delrosario" onChange={(v) => set('lastName', v)} />
+          <Field label="Middle name" value={form.middleName} placeholder="Optional, example: Rodriguez" onChange={(v) => set('middleName', v)} />
+          <Field label="Nickname" value={form.nickname} placeholder="Optional, example: Weng" onChange={(v) => set('nickname', v)} />
           <Field label="Birth date" type="date" value={form.birthDate?.slice(0, 10)} onChange={(v) => set('birthDate', v)} />
           <Field label="Death date" type="date" value={form.deathDate?.slice(0, 10)} onChange={(v) => set('deathDate', v)} />
-          <Field label="Birth place" value={form.birthPlace} onChange={(v) => set('birthPlace', v)} />
-          <Field label="Occupation" value={form.occupation} onChange={(v) => set('occupation', v)} />
-          <Field label="Family branch" value={form.branch} onChange={(v) => set('branch', v)} />
+          <Field label="Birth place" value={form.birthPlace} placeholder="Example: Malaang, Philippines" onChange={(v) => set('birthPlace', v)} />
+          <Field label="Occupation" value={form.occupation} placeholder="Example: Teacher, Farmer, Nurse" onChange={(v) => set('occupation', v)} />
+          <FamilyGroupPicker value={form.branch || ''} groups={familyGroups} onChange={(value) => set('branch', value)} onCreate={addFamilyGroup} />
           <Field label="Generation" type="number" value={form.generation} onChange={(v) => set('generation', Number(v))} />
-          <RelationSelect label="Parents" members={members} selected={form.parentIds || []} currentId={initial?._id} onChange={(ids) => set('parentIds', ids)} />
-          <RelationSelect label="Spouses" members={members} selected={form.spouseIds || []} currentId={initial?._id} onChange={(ids) => set('spouseIds', ids)} />
         </div>
-        <label className="mt-5 block text-sm font-semibold text-forest">Biography<textarea value={form.biography || ''} onChange={(e) => set('biography', e.target.value)} rows={5} className="admin-input mt-2 resize-none" placeholder="Share their story, memories, and milestones..." /></label>
-        <label className="mt-5 flex items-center gap-3 text-sm"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => set('isLiving', e.target.checked)} /> This person is living</label>
+        <div className="mt-6 rounded-3xl border border-clay/15 bg-white/65 p-5">
+          <p className="text-sm font-bold text-forest">How this person connects</p>
+          <p className="mt-1 text-xs leading-5 text-ink/50">
+            Pick parents for the downward family line. Pick spouses or partners for side-by-side connections.
+            For a step-parent, add them as the parent's spouse, but only choose them as a parent if you want their line connected to the child too.
+          </p>
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <RelationPicker
+              label="Parents"
+              description="Mother, father, or any parent you want shown above this person."
+              members={availableMembers}
+              selected={form.parentIds || []}
+              currentId={initial?._id}
+              onChange={(ids) => set('parentIds', ids)}
+              quickDefaults={{ branch: form.branch, generation: Math.max(1, Number(form.generation || 2) - 1) }}
+              onCreate={(draft) => createRelatedMember(draft, 'parentIds')}
+            />
+            <RelationPicker
+              label="Spouses / partners"
+              description="Husband, wife, partner, or step-parent relationship to this person's parent."
+              members={availableMembers}
+              selected={form.spouseIds || []}
+              currentId={initial?._id}
+              onChange={(ids) => set('spouseIds', ids)}
+              quickDefaults={{ branch: form.branch, generation: Number(form.generation || 1) }}
+              onCreate={(draft) => createRelatedMember(draft, 'spouseIds')}
+            />
+          </div>
+        </div>
+        <label className="mt-5 block text-sm font-semibold text-ink">Biography<textarea value={form.biography || ''} onChange={(e) => set('biography', e.target.value)} rows={5} className="admin-input mt-2 resize-none" placeholder="Add short memories, family notes, or important life details..." /></label>
+        <label className="mt-5 flex items-center gap-3 text-sm text-ink"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => set('isLiving', e.target.checked)} /> This person is living</label>
         <div className="mt-8 flex justify-end gap-3"><button type="button" className="button-secondary" onClick={onClose}>Cancel</button><button className="button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save member'}</button></div>
       </form>
     </div>
   );
 }
 
-function Field({ label, value, onChange, type = 'text', required = false }: { label: string; value: unknown; onChange: (value: string) => void; type?: string; required?: boolean }) {
-  return <label className="text-sm font-semibold text-forest">{label}<input className="admin-input mt-2" type={type} required={required} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} /></label>;
+function Field({ label, value, onChange, type = 'text', required = false, placeholder }: { label: string; value: unknown; onChange: (value: string) => void; type?: string; required?: boolean; placeholder?: string }) {
+  return <label className="text-sm font-semibold text-ink">{label}<input className="admin-input mt-2" type={type} required={required} placeholder={placeholder} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} /></label>;
 }
 
-function RelationSelect({ label, members, selected, currentId, onChange }: { label: string; members: FamilyMember[]; selected: string[]; currentId?: string; onChange: (ids: string[]) => void }) {
+function FamilyGroupPicker({ value, groups, onChange, onCreate }: { value: string; groups: FamilyGroup[]; onChange: (value: string) => void; onCreate: (name: string) => Promise<FamilyGroup> }) {
+  const [newGroup, setNewGroup] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const createGroup = async () => {
+    if (!newGroup.trim()) return;
+    setCreating(true);
+    try {
+      const group = await onCreate(newGroup.trim());
+      onChange(group.name);
+      setNewGroup('');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
-    <label className="text-sm font-semibold text-forest">{label}
-      <select multiple className="admin-input mt-2 h-28" value={selected} onChange={(e) => onChange(Array.from(e.target.selectedOptions, (option) => option.value))}>
-        {members.filter((member) => member._id !== currentId).map((member) => <option key={member._id} value={member._id}>{member.firstName} {member.lastName}</option>)}
+    <div className="text-sm font-semibold text-ink">
+      <label>Family group</label>
+      <select className="admin-input mt-2" value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Select family group...</option>
+        {groups.map((group) => <option key={group._id} value={group.name}>{group.name}</option>)}
       </select>
-    </label>
+      <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input className="admin-input" value={newGroup} onChange={(event) => setNewGroup(event.target.value)} placeholder="Create group, example: Delrosario" />
+        <button type="button" onClick={createGroup} disabled={creating || !newGroup.trim()} className="rounded-xl bg-clay px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+          {creating ? 'Adding...' : 'Add group'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RelationPicker({
+  label,
+  description,
+  members,
+  selected,
+  currentId,
+  onChange,
+  quickDefaults,
+  onCreate,
+}: {
+  label: string;
+  description: string;
+  members: FamilyMember[];
+  selected: string[];
+  currentId?: string;
+  onChange: (ids: string[]) => void;
+  quickDefaults?: Partial<Pick<FamilyMember, 'branch' | 'generation'>>;
+  onCreate?: (draft: QuickMemberDraft) => Promise<FamilyMember>;
+}) {
+  const [query, setQuery] = useState('');
+  const [quickFirstName, setQuickFirstName] = useState('');
+  const [quickLastName, setQuickLastName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const selectedSet = new Set(selected);
+  const options = members
+    .filter((member) => member._id !== currentId)
+    .filter((member) => fullName(member).toLowerCase().includes(query.toLowerCase()))
+    .slice(0, 12);
+  const selectedMembers = members.filter((member) => selectedSet.has(member._id));
+
+  const toggle = (memberId: string) => {
+    if (selectedSet.has(memberId)) onChange(selected.filter((id) => id !== memberId));
+    else onChange([...selected, memberId]);
+  };
+  const relationName = label.toLowerCase().includes('parent') ? 'parent' : 'spouse or partner';
+  const createQuickMember = async () => {
+    if (!quickFirstName.trim() || !quickLastName.trim() || !onCreate) return;
+    setCreating(true);
+    try {
+      const member = await onCreate({
+        firstName: quickFirstName.trim(),
+        lastName: quickLastName.trim(),
+        branch: quickDefaults?.branch,
+        generation: quickDefaults?.generation,
+      });
+      setQuery(fullName(member));
+      setQuickFirstName('');
+      setQuickLastName('');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-ink">{label}</p>
+          <p className="mt-1 text-xs leading-5 text-ink/45">{description}</p>
+        </div>
+        {!!selected.length && <span className="rounded-full bg-clay/10 px-2.5 py-1 text-xs font-bold text-clay">{selected.length}</span>}
+      </div>
+      {!!selectedMembers.length && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selectedMembers.map((member) => (
+            <button key={member._id} type="button" onClick={() => toggle(member._id)} className="rounded-full bg-clay px-3 py-1 text-xs font-semibold text-white">
+              {fullName(member)} x
+            </button>
+          ))}
+        </div>
+      )}
+      <input className="admin-input mt-3" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${label.toLowerCase()}...`} />
+      <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+        {options.map((member) => {
+          const checked = selectedSet.has(member._id);
+          return (
+            <button
+              key={member._id}
+              type="button"
+              onClick={() => toggle(member._id)}
+              className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition ${checked ? 'border-clay bg-clay/10 text-forest' : 'border-forest/10 bg-white text-ink/65 hover:border-clay/30'}`}
+            >
+              <span>
+                <strong className="block text-ink">{fullName(member)}</strong>
+                <small className="text-ink/40">{member.branch || 'No branch'} - Generation {member.generation || 'unknown'}</small>
+              </span>
+              <span className={`grid size-5 place-items-center rounded-full border text-[10px] font-bold ${checked ? 'border-clay bg-clay text-white' : 'border-forest/20 text-transparent'}`}>{checked ? 'OK' : ''}</span>
+            </button>
+          );
+        })}
+        {!options.length && <p className="rounded-2xl border border-dashed border-forest/15 bg-white/60 px-4 py-5 text-center text-xs text-ink/40">No matching family member found.</p>}
+      </div>
+      {onCreate && (
+        <div className="mt-4 rounded-2xl border border-dashed border-clay/25 bg-white/70 p-4">
+          <p className="text-xs font-bold uppercase tracking-[.12em] text-ink/40">Not listed?</p>
+          <p className="mt-1 text-sm font-semibold text-ink">Create a new {relationName}</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <input className="admin-input" value={quickFirstName} onChange={(event) => setQuickFirstName(event.target.value)} placeholder="First name" />
+            <input className="admin-input" value={quickLastName} onChange={(event) => setQuickLastName(event.target.value)} placeholder="Last name" />
+          </div>
+          <button
+            type="button"
+            onClick={createQuickMember}
+            disabled={creating || !quickFirstName.trim() || !quickLastName.trim()}
+            className="mt-3 inline-flex items-center justify-center rounded-full bg-clay px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? 'Creating...' : `Create and select ${relationName}`}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -208,13 +435,40 @@ function DashboardImageManager({ images, onSaved }: { images: DashboardImage[]; 
 function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const { members, error, reload } = useAdminMembers(onLogout);
   const { images: dashboardImages, reload: reloadDashboardImages } = useAdminDashboardImages();
+  const { groups: familyGroups, reload: reloadFamilyGroups } = useFamilyGroups(onLogout);
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<FamilyMember | null | undefined>();
-  const filtered = useMemo(() => members.filter((member) => `${member.firstName} ${member.lastName}`.toLowerCase().includes(query.toLowerCase())), [members, query]);
+  const [preset, setPreset] = useState<FormState | undefined>();
+  const groupedMembers = useMemo(() => {
+    const byId = new Map(members.map((member) => [member._id, member]));
+    const used = new Set<string>();
+    const groups: AdminMemberGroup[] = [];
+
+    members.forEach((member) => {
+      if (used.has(member._id)) return;
+      const partners = member.spouseIds.map((spouseId) => byId.get(spouseId)).filter((spouse): spouse is FamilyMember => Boolean(spouse));
+      const groupMembers = [member, ...partners].filter((item, index, all) => all.findIndex((match) => match._id === item._id) === index);
+      const anchor = pickGroupAnchor(groupMembers);
+      const ordered = [anchor, ...groupMembers.filter((item) => item._id !== anchor._id).sort(sortMembers)];
+      ordered.forEach((item) => used.add(item._id));
+      groups.push({ id: ordered.map((item) => item._id).sort().join('-'), members: ordered });
+    });
+
+    return groups.sort((first, second) => sortMembers(first.members[0]!, second.members[0]!));
+  }, [members]);
+  const filtered = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    if (!search) return groupedMembers;
+    return groupedMembers.filter((group) => group.members.some((member) => fullName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search)));
+  }, [groupedMembers, query]);
   const remove = async (member: FamilyMember) => {
     if (!confirm(`Remove ${member.firstName} ${member.lastName} from the family tree?`)) return;
     await deleteMember(member._id);
     reload();
+  };
+  const addChild = (parent: FamilyMember) => {
+    setPreset({ ...emptyForm, parentIds: [parent._id], generation: (parent.generation || 1) + 1, branch: parent.branch });
+    setEditing(null);
   };
 
   return (
@@ -232,30 +486,61 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         <DashboardImageManager images={dashboardImages} onSaved={reloadDashboardImages} />
         <div className="mb-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div><p className="eyebrow">Family records</p><h1 className="mt-2 font-display text-4xl text-forest">Manage the family tree</h1><p className="mt-2 text-sm text-ink/50">Add people, preserve their stories, and connect every branch.</p></div>
-          <button className="button-primary" onClick={() => setEditing(null)}><Plus size={18} /> Add family member</button>
+          <button className="button-primary" onClick={() => { setPreset(undefined); setEditing(null); }}><Plus size={18} /> Add family member</button>
         </div>
         <div className="mb-6 grid gap-4 sm:grid-cols-[1fr_auto]">
           <label className="input-shell bg-white"><Search size={18} /><input placeholder="Search records..." value={query} onChange={(e) => setQuery(e.target.value)} /></label>
           <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-3 text-sm text-ink/55"><Users size={18} className="text-clay" /><strong className="text-forest">{members.length}</strong> family members</div>
         </div>
         {error && <div className="mb-5 rounded-2xl border border-clay/20 bg-clay/10 p-4 text-sm text-clay">{error}</div>}
-        <div className="overflow-hidden rounded-3xl border border-forest/10 bg-white shadow-sm">
-          <div className="hidden grid-cols-[1fr_1fr_120px_100px] border-b border-forest/10 bg-forest/[.03] px-6 py-4 text-xs font-bold uppercase tracking-wider text-ink/40 md:grid"><span>Family member</span><span>Details</span><span>Generation</span><span>Actions</span></div>
-          {filtered.map((member) => (
-            <article key={member._id} className="grid gap-4 border-b border-forest/10 px-6 py-5 last:border-0 md:grid-cols-[1fr_1fr_120px_100px] md:items-center">
-              <div className="flex items-center gap-4">
-                <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-moss font-display text-white">{member.profileImage ? <img src={member.profileImage} className="h-full w-full object-cover" /> : `${member.firstName[0]}${member.lastName[0]}`}</div>
-                <div><strong className="block text-forest">{member.firstName} {member.lastName}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
+        <div className="space-y-4">
+          {filtered.map((group) => (
+            <article key={group.id} className="rounded-3xl border border-forest/10 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-forest/10 pb-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[.14em] text-ink/35">{group.members.length > 1 ? 'Family unit' : 'Family member'}</p>
+                  <h3 className="mt-1 text-lg font-bold text-ink">{group.members.map((member) => fullName(member)).join(' + ')}</h3>
+                </div>
+                <span className="rounded-full bg-clay/10 px-3 py-1 text-xs font-bold text-clay">{group.members.length} record{group.members.length > 1 ? 's' : ''}</span>
               </div>
-              <div className="text-sm text-ink/50"><p>{member.occupation || 'No occupation recorded'}</p><small>{member.birthDate ? new Date(member.birthDate).getFullYear() : 'Birth year unknown'}</small></div>
-              <span className="text-sm text-ink/60">Generation {member.generation || '—'}</span>
-              <div className="flex gap-2"><button onClick={() => setEditing(member)} className="admin-icon" aria-label="Edit"><Pencil size={16} /></button><button onClick={() => remove(member)} className="admin-icon text-clay" aria-label="Delete"><Trash2 size={16} /></button></div>
+              <div className="grid gap-3">
+                {group.members.map((member) => (
+                  <div key={member._id} className="grid gap-4 rounded-2xl bg-cream/55 p-4 md:grid-cols-[1fr_1fr_110px_140px] md:items-center">
+                    <div className="flex items-center gap-4">
+                      <MemberAvatar member={member} />
+                      <div><strong className="block text-ink">{fullName(member)}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
+                    </div>
+                    <div className="text-sm text-ink/50"><p>{member.occupation || 'No occupation recorded'}</p><small>{member.birthDate ? new Date(member.birthDate).getFullYear() : 'Birth year unknown'}</small></div>
+                    <span className="text-sm text-ink/60">Gen {member.generation || '-'}</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => addChild(member)} className="admin-icon text-clay" aria-label={`Add child under ${fullName(member)}`} title="Add child"><Plus size={16} /></button>
+                      <button onClick={() => { setPreset(undefined); setEditing(member); }} className="admin-icon" aria-label={`Edit ${fullName(member)}`} title="Edit"><Pencil size={16} /></button>
+                      <button onClick={() => remove(member)} className="admin-icon text-clay" aria-label={`Delete ${fullName(member)}`} title="Delete"><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {group.members.length > 1 && (
+                <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-xs leading-5 text-ink/45">
+                  These people are connected as spouses or partners. Use each person's plus button when adding a child under only that person.
+                </p>
+              )}
             </article>
           ))}
-          {!filtered.length && <div className="p-16 text-center text-ink/40">No family members found.</div>}
+          {!filtered.length && <div className="rounded-3xl border border-dashed border-forest/15 bg-white p-16 text-center text-ink/40">No family members found.</div>}
         </div>
       </main>
-      {editing !== undefined && <MemberForm members={members} initial={editing || undefined} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); reload(); }} />}
+      {editing !== undefined && (
+        <MemberForm
+          members={members}
+          familyGroups={familyGroups}
+          initial={editing || undefined}
+          preset={preset}
+          onClose={() => { setEditing(undefined); setPreset(undefined); }}
+          onSaved={() => { setEditing(undefined); setPreset(undefined); reload(); reloadFamilyGroups(); }}
+          onFamilyGroupSaved={reloadFamilyGroups}
+        />
+      )}
     </div>
   );
 }

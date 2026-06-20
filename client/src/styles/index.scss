@@ -42,9 +42,9 @@ button, a { transition: all .2s ease; }
 .admin-login__field:focus-within { border-color: #8f2632; box-shadow: 0 0 0 3px rgba(143,38,50,.1); }
 .admin-login__field input { width: 100%; padding: 13px 0; background: transparent; color: #301f21; outline: none; }
 
-.tree-canvas { height: calc(100vh - 245px); min-height: 580px; overflow: hidden; border: 1px solid rgba(74,16,24,.1); border-radius: 2rem; background: rgba(255,255,255,.52); box-shadow: 0 25px 80px rgba(74,16,24,.08); }
+.tree-canvas { height: calc(100vh - 215px); min-height: 720px; overflow: hidden; border: 1px solid rgba(74,16,24,.1); border-radius: 2rem; background: rgba(255,255,255,.52); box-shadow: 0 25px 80px rgba(74,16,24,.08); }
 .home-tree { background: transparent; }
-.tree-canvas--featured { height: 680px; border-color: rgba(194,71,75,.24); background: rgba(255,255,255,.72); box-shadow: 0 30px 90px rgba(74,16,24,.12); }
+.tree-canvas--featured { height: 820px; border-color: rgba(194,71,75,.24); background: rgba(255,255,255,.72); box-shadow: 0 30px 90px rgba(74,16,24,.12); }
 .person-node { display: flex; align-items: center; gap: 12px; width: 230px; min-height: 104px; padding: 14px; border: 1px solid rgba(74,16,24,.12); border-radius: 22px; background: rgba(255,255,255,.96); box-shadow: 0 12px 28px rgba(74,16,24,.12); cursor: pointer; transition: .2s ease; }
 .person-node:hover, .person-node--selected { transform: translateY(-3px); border-color: #CE2626; box-shadow: 0 18px 38px rgba(74,16,24,.18); }
 .person-node__portrait { position: relative; display: grid; place-items: center; width: 62px; height: 70px; flex: 0 0 62px; overflow: visible; border-radius: 17px; background: linear-gradient(145deg,#CE2626,#7f1d1d); color: white; font-family: Georgia,serif; font-size: 23px; }
