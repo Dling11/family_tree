@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Eye, Heart, Minus, MoreVertical, Plus, RotateCcw } from 'lucide-react';
+import { Camera, Eye, Heart, Minus, MoreVertical, Pencil, Plus, RotateCcw, UserPlus } from 'lucide-react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { FamilyMember, TreeData } from '../../types';
 import { familyCardDateLabel } from '../../utils/dateLabels';
@@ -24,11 +24,50 @@ const sortByFamilyOrder = (first: FamilyMember, second: FamilyMember) => {
 const sharedChildCount = (first: FamilyMember, second: FamilyMember, members: FamilyMember[]) =>
   members.filter((member) => member.parentIds.includes(first._id) && member.parentIds.includes(second._id)).length;
 
-function PersonBranchCard({ member, onClick }: { member: FamilyMember; onClick: (member: FamilyMember) => void }) {
+const branchStyle = (member: FamilyMember) => {
+  const branch = (member.branch || member.lastName || 'family').toLowerCase();
+  let hash = 0;
+  for (let index = 0; index < branch.length; index += 1) hash = branch.charCodeAt(index) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return {
+    '--branch-color': `hsl(${hue} 64% 44%)`,
+    '--branch-soft': `hsl(${hue} 70% 96%)`,
+  } as React.CSSProperties;
+};
+
+const lifeStatusClass = (member: FamilyMember) => {
+  if (member.lifeStatus === 'pregnancy-loss') return 'family-card__status--remembered';
+  if (member.lifeStatus === 'unknown') return 'family-card__status--unknown';
+  if (member.lifeStatus === 'deceased' || member.isLiving === false) return 'family-card__status--deceased';
+  return 'family-card__status--living';
+};
+
+type TreeMode = 'public' | 'admin';
+type TreeActions = {
+  mode?: TreeMode;
+  onEdit?: (member: FamilyMember) => void;
+  onAddChild?: (member: FamilyMember) => void;
+  onUploadImage?: (member: FamilyMember) => void;
+};
+
+function TreeLegend() {
+  return (
+    <div className="tree-legend" aria-label="Tree color legend">
+      <span><i className="family-card__status--living" /> Living</span>
+      <span><i className="family-card__status--deceased" /> Deceased</span>
+      <span><i className="family-card__status--remembered" /> Remembered</span>
+      <span><i className="family-card__status--unknown" /> Unknown</span>
+    </div>
+  );
+}
+
+function PersonBranchCard({ member, onClick, actions }: { member: FamilyMember; onClick: (member: FamilyMember) => void; actions?: TreeActions }) {
   const rememberedChild = member.lifeStatus === 'pregnancy-loss';
+  const adminMode = actions?.mode === 'admin';
 
   return (
-    <article className={`family-card ${rememberedChild ? 'family-card--remembered' : ''}`}>
+    <article className={`family-card ${rememberedChild ? 'family-card--remembered' : ''}`} style={branchStyle(member)}>
+      <span className={`family-card__status ${lifeStatusClass(member)}`} title={member.lifeStatus || (member.isLiving === false ? 'deceased' : 'living')} />
       <div className="family-card__main">
         <span className="family-card__photo">
           {member.profileImage ? <img src={member.profileImage} alt={fullName(member)} /> : rememberedChild ? <Heart size={34} /> : initials(member)}
@@ -52,6 +91,19 @@ function PersonBranchCard({ member, onClick }: { member: FamilyMember; onClick: 
             <DropdownMenu.Item className="family-card-menu__item" onSelect={() => onClick(member)}>
               <Eye size={15} /> View details
             </DropdownMenu.Item>
+            {adminMode && (
+              <>
+                <DropdownMenu.Item className="family-card-menu__item" onSelect={() => actions?.onEdit?.(member)}>
+                  <Pencil size={15} /> Edit person
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className="family-card-menu__item" onSelect={() => actions?.onUploadImage?.(member)}>
+                  <Camera size={15} /> Upload photo
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className="family-card-menu__item" onSelect={() => actions?.onAddChild?.(member)}>
+                  <UserPlus size={15} /> Add child
+                </DropdownMenu.Item>
+              </>
+            )}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
@@ -59,7 +111,21 @@ function PersonBranchCard({ member, onClick }: { member: FamilyMember; onClick: 
   );
 }
 
-function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMember; members: FamilyMember[]; onSelect: (member: FamilyMember) => void; depth?: number }) {
+function BranchUnit({
+  owner,
+  members,
+  onSelect,
+  actions,
+  includeHidden = false,
+  depth = 0,
+}: {
+  owner: FamilyMember;
+  members: FamilyMember[];
+  onSelect: (member: FamilyMember) => void;
+  actions?: TreeActions;
+  includeHidden?: boolean;
+  depth?: number;
+}) {
   const memberById = new Map(members.map((member) => [member._id, member]));
   const children = members
     .filter((member) => member.parentIds.includes(owner._id))
@@ -70,37 +136,50 @@ function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMemb
     .map((partnerId) => memberById.get(partnerId))
     .filter((member): member is FamilyMember => {
       if (!member) return false;
-      return member._id !== owner._id && !member.hideInTree;
+      return member._id !== owner._id && (includeHidden || !member.hideInTree);
     })
     .sort(sortByName);
 
   const childPartners = new Set(partners.map((partner) => partner._id));
-  const visibleChildren = children.filter((child) => !child.hideInTree);
+  const visibleChildren = children.filter((child) => includeHidden || !child.hideInTree);
+  const showAddChildButton = actions?.mode === 'admin' && actions.onAddChild && (partners.length > 0 || visibleChildren.length > 0);
+  const addChildLabel = partners.length ? 'Add child' : '';
 
   return (
     <div className={`branch-unit ${depth > 0 ? 'branch-unit--nested' : ''}`}>
       <div className={`branch-family-row ${visibleChildren.length ? 'branch-family-row--has-children' : ''}`}>
-        <PersonBranchCard member={owner} onClick={onSelect} />
-        {partners.map((partner) => <PersonBranchCard key={partner._id} member={partner} onClick={onSelect} />)}
+        <PersonBranchCard member={owner} onClick={onSelect} actions={actions} />
+        {partners.map((partner) => <PersonBranchCard key={partner._id} member={partner} onClick={onSelect} actions={actions} />)}
+        {showAddChildButton && (
+          <button
+            type="button"
+            className="branch-add-child"
+            onClick={() => actions.onAddChild?.(owner)}
+            aria-label={`Add child under ${fullName(owner)}`}
+          >
+            <Plus size={16} />
+            {addChildLabel && <span>{addChildLabel}</span>}
+          </button>
+        )}
       </div>
 
       {!!visibleChildren.length && (
         <div className="branch-children">
           {visibleChildren.map((child) => {
-            const hasOwnChildren = members.some((member) => member.parentIds.includes(child._id) && !member.hideInTree);
+            const hasOwnChildren = members.some((member) => member.parentIds.includes(child._id) && (includeHidden || !member.hideInTree));
             const childHasVisiblePartner = child.spouseIds.some((spouseId) => {
               const spouse = memberById.get(spouseId);
-              return spouse && !spouse.hideInTree;
+              return spouse && (includeHidden || !spouse.hideInTree);
             });
-            const childOnlyBelongsHere = child.parentIds.every((parentId) => parentId === owner._id || childPartners.has(parentId) || memberById.get(parentId)?.hideInTree);
+            const childOnlyBelongsHere = child.parentIds.every((parentId) => parentId === owner._id || childPartners.has(parentId) || (!includeHidden && memberById.get(parentId)?.hideInTree));
 
             if ((hasOwnChildren || childHasVisiblePartner) && childOnlyBelongsHere) {
-              return <BranchUnit key={child._id} owner={child} members={members} onSelect={onSelect} depth={depth + 1} />;
+              return <BranchUnit key={child._id} owner={child} members={members} onSelect={onSelect} actions={actions} includeHidden={includeHidden} depth={depth + 1} />;
             }
 
             return (
               <div key={child._id} className="branch-leaf">
-                <PersonBranchCard member={child} onClick={onSelect} />
+                <PersonBranchCard member={child} onClick={onSelect} actions={actions} />
               </div>
             );
           })}
@@ -110,8 +189,8 @@ function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMemb
   );
 }
 
-function buildRootTree(data: TreeData) {
-  const visibleMembers = data.members.filter((member) => !member.hideInTree);
+function buildRootTree(data: TreeData, includeHidden = false) {
+  const visibleMembers = data.members.filter((member) => includeHidden || !member.hideInTree);
   const visibleById = new Map(visibleMembers.map((member) => [member._id, member]));
   const roots = visibleMembers.filter((member) => !member.parentIds.some((parentId) => visibleById.has(parentId)));
   const rootIds = new Set(roots.map((member) => member._id));
@@ -141,13 +220,31 @@ function buildRootTree(data: TreeData) {
   return { rootA, rootB, children, visibleMembers };
 }
 
-export function FamilyTree({ data, focusId, variant = 'default' }: { data: TreeData; focusId?: string; variant?: 'default' | 'featured' }) {
+export function FamilyTree({
+  data,
+  focusId,
+  variant = 'default',
+  mode = 'public',
+  onEdit,
+  onAddChild,
+  onUploadImage,
+}: {
+  data: TreeData;
+  focusId?: string;
+  variant?: 'default' | 'featured' | 'admin';
+  mode?: TreeMode;
+  onEdit?: (member: FamilyMember) => void;
+  onAddChild?: (member: FamilyMember) => void;
+  onUploadImage?: (member: FamilyMember) => void;
+}) {
   const [selected, setSelected] = useState<FamilyMember | null>(null);
-  const tree = useMemo(() => buildRootTree(data), [data]);
+  const includeHidden = mode === 'admin';
+  const tree = useMemo(() => buildRootTree(data, includeHidden), [data, includeHidden]);
+  const actions = useMemo(() => ({ mode, onEdit, onAddChild, onUploadImage }), [mode, onAddChild, onEdit, onUploadImage]);
 
   return (
     <>
-      <div className={`tree-canvas custom-tree-canvas ${variant === 'featured' ? 'tree-canvas--featured' : ''}`} data-focus-id={focusId || undefined}>
+      <div className={`tree-canvas custom-tree-canvas ${variant === 'featured' ? 'tree-canvas--featured' : ''} ${variant === 'admin' ? 'tree-canvas--admin' : ''}`} data-focus-id={focusId || undefined}>
         {tree.rootA ? (
           <TransformWrapper
             initialScale={0.86}
@@ -164,6 +261,7 @@ export function FamilyTree({ data, focusId, variant = 'default' }: { data: TreeD
           >
             {({ zoomIn, zoomOut, resetTransform }) => (
               <>
+                <TreeLegend />
                 <div className="tree-zoom-controls">
                   <button type="button" onClick={() => zoomIn(0.18, 180, 'easeOut')} aria-label="Zoom in"><Plus size={16} /></button>
                   <button type="button" onClick={() => zoomOut(0.18, 180, 'easeOut')} aria-label="Zoom out"><Minus size={16} /></button>
@@ -172,14 +270,14 @@ export function FamilyTree({ data, focusId, variant = 'default' }: { data: TreeD
                 <TransformComponent wrapperClass="tree-zoom-wrapper" contentClass="tree-zoom-content">
                   <div className="custom-tree">
                     <div className="custom-tree__roots">
-                      <PersonBranchCard member={tree.rootA} onClick={setSelected} />
-                      {tree.rootB && <PersonBranchCard member={tree.rootB} onClick={setSelected} />}
+                      <PersonBranchCard member={tree.rootA} onClick={setSelected} actions={actions} />
+                      {tree.rootB && <PersonBranchCard member={tree.rootB} onClick={setSelected} actions={actions} />}
                     </div>
 
                     {!!tree.children.length && (
                       <div className="root-branches">
                         {tree.children.map((child) => (
-                          <BranchUnit key={child._id} owner={child} members={tree.visibleMembers} onSelect={setSelected} />
+                          <BranchUnit key={child._id} owner={child} members={tree.visibleMembers} onSelect={setSelected} actions={actions} includeHidden={includeHidden} />
                         ))}
                       </div>
                     )}

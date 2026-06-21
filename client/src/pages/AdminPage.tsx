@@ -1,16 +1,18 @@
 import { ArrowLeft, ImagePlus, Images, LockKeyhole, LogOut, Pencil, Plus, Search, Sprout, Trash2, UserRound, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { FamilyTree } from '../components/tree/FamilyTree';
 import { createDashboardImage, createFamilyGroup, createMember, deleteDashboardImage, deleteMember, hasAdminSession, loginAdmin, logoutAdmin, updateMember } from '../api';
 import { useAdminDashboardImages } from '../hooks/useDashboardImages';
 import { useAdminMembers } from '../hooks/useAdminMembers';
 import { useFamilyGroups } from '../hooks/useFamilyGroups';
-import type { DashboardImage, FamilyGroup, FamilyMember } from '../types';
+import type { DashboardImage, FamilyGroup, FamilyMember, TreeData } from '../types';
 
 type FormState = Partial<FamilyMember> & { image?: File };
 type QuickMemberDraft = Pick<FamilyMember, 'firstName' | 'lastName'> & Partial<Pick<FamilyMember, 'branch'>>;
 const emptyForm: FormState = { firstName: '', lastName: '', parentIds: [], spouseIds: [], isLiving: true };
 const fullName = (member: FamilyMember) => `${member.firstName} ${member.lastName}`;
+type AdminTab = 'tree' | 'records' | 'carousel';
 type AdminMemberGroup = { id: string; members: FamilyMember[] };
 const genderLabel = (gender?: FamilyMember['gender']) => {
   if (gender === 'male') return 'Male';
@@ -597,14 +599,31 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<FamilyMember | null | undefined>();
   const [preset, setPreset] = useState<FormState | undefined>();
+  const [activeTab, setActiveTab] = useState<AdminTab>('tree');
+  const memberById = useMemo(() => new Map(members.map((member) => [member._id, member])), [members]);
+  const adminTree = useMemo<TreeData>(() => {
+    const spouseKeys = new Set<string>();
+    return {
+      members,
+      edges: [
+        ...members.flatMap((member) => member.parentIds.map((parentId) => ({ id: `parent-${parentId}-${member._id}`, source: parentId, target: member._id, type: 'parent' as const }))),
+        ...members.flatMap((member) => member.spouseIds.flatMap((spouseId) => {
+          const pair = [member._id, spouseId].sort();
+          const key = pair.join('-');
+          if (spouseKeys.has(key)) return [];
+          spouseKeys.add(key);
+          return [{ id: `spouse-${key}`, source: pair[0]!, target: pair[1]!, type: 'spouse' as const }];
+        })),
+      ],
+    };
+  }, [members]);
   const groupedMembers = useMemo(() => {
-    const byId = new Map(members.map((member) => [member._id, member]));
     const used = new Set<string>();
     const groups: AdminMemberGroup[] = [];
 
     members.forEach((member) => {
       if (used.has(member._id)) return;
-      const partners = member.spouseIds.map((spouseId) => byId.get(spouseId)).filter((spouse): spouse is FamilyMember => Boolean(spouse));
+      const partners = member.spouseIds.map((spouseId) => memberById.get(spouseId)).filter((spouse): spouse is FamilyMember => Boolean(spouse));
       const groupMembers = [member, ...partners].filter((item, index, all) => all.findIndex((match) => match._id === item._id) === index);
       const anchor = pickGroupAnchor(groupMembers);
       const ordered = [anchor, ...groupMembers.filter((item) => item._id !== anchor._id).sort(sortMembers)];
@@ -613,7 +632,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     });
 
     return groups.sort((first, second) => sortMembers(first.members[0]!, second.members[0]!));
-  }, [members]);
+  }, [memberById, members]);
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
     if (!search) return groupedMembers;
@@ -625,8 +644,14 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     reload();
   };
   const addChild = (parent: FamilyMember) => {
-    setPreset({ ...emptyForm, parentIds: [parent._id], branch: parent.branch });
+    const partners = parent.spouseIds.map((spouseId) => memberById.get(spouseId)).filter((spouse): spouse is FamilyMember => Boolean(spouse));
+    const parentIds = partners.length === 1 ? [parent._id, partners[0]._id] : [parent._id];
+    setPreset({ ...emptyForm, parentIds, branch: parent.branch || partners[0]?.branch });
     setEditing(null);
+  };
+  const editMember = (member: FamilyMember) => {
+    setPreset(undefined);
+    setEditing(member);
   };
 
   return (
@@ -641,57 +666,116 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <DashboardImageManager images={dashboardImages} onSaved={reloadDashboardImages} />
-        <div className="mb-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-          <div><p className="eyebrow">Family records</p><h1 className="mt-2 font-display text-4xl text-forest">Manage the family tree</h1><p className="mt-2 text-sm text-ink/50">Add people, preserve their stories, and connect every branch.</p></div>
-          <button className="button-primary" onClick={() => { setPreset(undefined); setEditing(null); }}><Plus size={18} /> Add family member</button>
+        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+          <div>
+            <p className="eyebrow">Admin workspace</p>
+            <h1 className="mt-2 font-display text-4xl text-forest">Manage the Rodriguez archive</h1>
+            <p className="mt-2 text-sm text-ink/50">Choose one workspace at a time so the admin page stays easier to use.</p>
+          </div>
+          <button className="button-primary shrink-0" onClick={() => { setPreset(undefined); setEditing(null); }}><Plus size={18} /> Add family member</button>
         </div>
-        <div className="mb-6 grid gap-4 sm:grid-cols-[1fr_auto]">
-          <label className="input-shell bg-white"><Search size={18} /><input placeholder="Search records..." value={query} onChange={(e) => setQuery(e.target.value)} /></label>
-          <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-3 text-sm text-ink/55"><Users size={18} className="text-clay" /><strong className="text-forest">{members.length}</strong> family members</div>
-        </div>
-        {error && <div className="mb-5 rounded-2xl border border-clay/20 bg-clay/10 p-4 text-sm text-clay">{error}</div>}
-        <div className="space-y-4">
-          {filtered.map((group) => (
-            <article key={group.id} className="rounded-3xl border border-forest/10 bg-white p-4 shadow-sm sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-3 border-b border-forest/10 pb-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[.14em] text-ink/35">{group.members.length > 1 ? 'Family unit' : 'Family member'}</p>
-                  <h3 className="mt-1 text-lg font-bold text-ink">{group.members.map((member) => fullName(member)).join(' + ')}</h3>
-                </div>
-                <span className="rounded-full bg-clay/10 px-3 py-1 text-xs font-bold text-clay">{group.members.length} record{group.members.length > 1 ? 's' : ''}</span>
-              </div>
-              <div className="grid gap-3">
-                {group.members.map((member) => (
-                  <div key={member._id} className="grid gap-4 rounded-2xl bg-cream/55 p-4 md:grid-cols-[1fr_1fr_110px_140px] md:items-center">
-                    <div className="flex items-center gap-4">
-                      <MemberAvatar member={member} />
-                      <div><strong className="block text-ink">{fullName(member)}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
-                    </div>
-                    <div className="text-sm text-ink/50">
-                      <p>{member.occupation || 'No occupation recorded'}</p>
-                      <small>
-                        {genderLabel(member.gender)} • {lifeStatusLabel(member.lifeStatus, member.isLiving)} • {member.siblingOrder ? `Child order ${member.siblingOrder}` : 'Order not set'} • {member.birthDate ? new Date(member.birthDate).getFullYear() : 'Birth year unknown'}
-                      </small>
-                    </div>
-                    <span className="text-sm text-ink/60">{member.hideInTree ? 'Hidden' : 'Visible'}</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => addChild(member)} className="admin-icon text-clay" aria-label={`Add child under ${fullName(member)}`} title="Add child"><Plus size={16} /></button>
-                      <button onClick={() => { setPreset(undefined); setEditing(member); }} className="admin-icon" aria-label={`Edit ${fullName(member)}`} title="Edit"><Pencil size={16} /></button>
-                      <button onClick={() => remove(member)} className="admin-icon text-clay" aria-label={`Delete ${fullName(member)}`} title="Delete"><Trash2 size={16} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {group.members.length > 1 && (
-                <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-xs leading-5 text-ink/45">
-                  These people are connected as spouses or partners. Use each person's plus button when adding a child under only that person.
-                </p>
-              )}
-            </article>
+        <div className="mb-8 flex flex-wrap gap-3 rounded-[1.5rem] border border-forest/10 bg-white p-2 shadow-sm">
+          {[
+            ['tree', 'Tree map'],
+            ['records', 'Family records'],
+            ['carousel', 'Landing carousel'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveTab(id as AdminTab)}
+              className={`rounded-full px-5 py-2.5 text-sm font-bold transition ${activeTab === id ? 'bg-clay text-white shadow-lg shadow-clay/15' : 'text-ink/55 hover:bg-cream hover:text-ink'}`}
+            >
+              {label}
+            </button>
           ))}
-          {!filtered.length && <div className="rounded-3xl border border-dashed border-forest/15 bg-white p-16 text-center text-ink/40">No family members found.</div>}
         </div>
+
+        {activeTab === 'tree' && (
+          <section className="overflow-hidden rounded-[2rem] border border-forest/10 bg-white shadow-sm">
+            <div className="flex flex-col justify-between gap-5 border-b border-forest/10 p-6 sm:flex-row sm:items-end lg:p-8">
+              <div>
+                <p className="eyebrow">Admin tree map</p>
+                <h2 className="mt-2 font-display text-3xl text-forest">Edit from the family branches</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-ink/50">
+                  Use each card menu to edit a person, upload a photo, or add a child directly under that branch.
+                </p>
+              </div>
+            </div>
+            <div className="p-4 lg:p-6">
+              {members.length ? (
+                <FamilyTree
+                  data={adminTree}
+                  variant="admin"
+                  mode="admin"
+                  onEdit={editMember}
+                  onUploadImage={editMember}
+                  onAddChild={addChild}
+                />
+              ) : (
+                <div className="tree-canvas tree-canvas--admin grid place-items-center text-white/60">No family members yet.</div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'records' && (
+          <section>
+            <div className="mb-10 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+              <div><p className="eyebrow">Family records</p><h2 className="mt-2 font-display text-4xl text-forest">Manage the family tree</h2><p className="mt-2 text-sm text-ink/50">Add people, preserve their stories, and connect every branch.</p></div>
+            </div>
+            <div className="mb-6 grid gap-4 sm:grid-cols-[1fr_auto]">
+              <label className="input-shell bg-white"><Search size={18} /><input placeholder="Search records..." value={query} onChange={(e) => setQuery(e.target.value)} /></label>
+              <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-3 text-sm text-ink/55"><Users size={18} className="text-clay" /><strong className="text-forest">{members.length}</strong> family members</div>
+            </div>
+            {error && <div className="mb-5 rounded-2xl border border-clay/20 bg-clay/10 p-4 text-sm text-clay">{error}</div>}
+            <div className="space-y-4">
+              {filtered.map((group) => (
+                <article key={group.id} className="rounded-3xl border border-forest/10 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3 border-b border-forest/10 pb-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[.14em] text-ink/35">{group.members.length > 1 ? 'Family unit' : 'Family member'}</p>
+                      <h3 className="mt-1 text-lg font-bold text-ink">{group.members.map((member) => fullName(member)).join(' + ')}</h3>
+                    </div>
+                    <span className="rounded-full bg-clay/10 px-3 py-1 text-xs font-bold text-clay">{group.members.length} record{group.members.length > 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="grid gap-3">
+                    {group.members.map((member) => (
+                      <div key={member._id} className="grid gap-4 rounded-2xl bg-cream/55 p-4 md:grid-cols-[1fr_1fr_110px_140px] md:items-center">
+                        <div className="flex items-center gap-4">
+                          <MemberAvatar member={member} />
+                          <div><strong className="block text-ink">{fullName(member)}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
+                        </div>
+                        <div className="text-sm text-ink/50">
+                          <p>{member.occupation || 'No occupation recorded'}</p>
+                          <small>
+                            {genderLabel(member.gender)} • {lifeStatusLabel(member.lifeStatus, member.isLiving)} • {member.siblingOrder ? `Child order ${member.siblingOrder}` : 'Order not set'} • {member.birthDate ? new Date(member.birthDate).getFullYear() : 'Birth year unknown'}
+                          </small>
+                        </div>
+                        <span className="text-sm text-ink/60">{member.hideInTree ? 'Hidden' : 'Visible'}</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => addChild(member)} className="admin-icon text-clay" aria-label={`Add child under ${fullName(member)}`} title="Add child"><Plus size={16} /></button>
+                          <button onClick={() => editMember(member)} className="admin-icon" aria-label={`Edit ${fullName(member)}`} title="Edit"><Pencil size={16} /></button>
+                          <button onClick={() => remove(member)} className="admin-icon text-clay" aria-label={`Delete ${fullName(member)}`} title="Delete"><Trash2 size={16} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {group.members.length > 1 && (
+                    <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-xs leading-5 text-ink/45">
+                      These people are connected as spouses or partners. Use each person's plus button when adding a child under only that person.
+                    </p>
+                  )}
+                </article>
+              ))}
+              {!filtered.length && <div className="rounded-3xl border border-dashed border-forest/15 bg-white p-16 text-center text-ink/40">No family members found.</div>}
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'carousel' && (
+          <DashboardImageManager images={dashboardImages} onSaved={reloadDashboardImages} />
+        )}
       </main>
       {editing !== undefined && (
         <MemberForm
