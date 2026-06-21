@@ -31,14 +31,14 @@ export async function listMembers(request: Request, response: Response, next: Ne
     const filter: Record<string, unknown> = {};
     if (query) filter.$text = { $search: query };
     if (branch) filter.branch = branch;
-    const members = await FamilyMember.find(filter).sort({ generation: 1, birthDate: 1, lastName: 1 }).lean();
+    const members = await FamilyMember.find(filter).sort({ lastName: 1, firstName: 1, birthDate: 1 }).lean();
     response.json(members);
   } catch (error) { next(error); }
 }
 
 export async function getTree(_request: Request, response: Response, next: NextFunction) {
   try {
-    const members = await FamilyMember.find().sort({ generation: 1, birthDate: 1 }).lean();
+    const members = await FamilyMember.find().sort({ lastName: 1, firstName: 1, birthDate: 1 }).lean();
     const edges: Array<{ id: string; source: string; target: string; type: 'parent' | 'spouse' }> = [];
     const spouseKeys = new Set<string>();
     members.forEach((member) => {

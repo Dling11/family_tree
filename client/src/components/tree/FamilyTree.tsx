@@ -1,34 +1,48 @@
 import { useMemo, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Eye, Minus, MoreVertical, Plus, RotateCcw } from 'lucide-react';
+import { Eye, Heart, Minus, MoreVertical, Plus, RotateCcw } from 'lucide-react';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { FamilyMember, TreeData } from '../../types';
+import { familyCardDateLabel } from '../../utils/dateLabels';
 import { PersonModal } from '../ui/PersonModal';
 
 const fullName = (member: FamilyMember) => [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' ');
 const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
-const years = (member: FamilyMember) => {
-  const born = member.birthDate ? new Date(member.birthDate).getFullYear() : '';
-  const died = member.deathDate ? new Date(member.deathDate).getFullYear() : '';
-  if (born && died) return `${born} - ${died}`;
-  if (born) return String(born);
-  if (died) return `d. ${died}`;
-  return 'Year unknown';
-};
 const sortByName = (first: FamilyMember, second: FamilyMember) => fullName(first).localeCompare(fullName(second));
+const sortByFamilyOrder = (first: FamilyMember, second: FamilyMember) => {
+  const firstOrder = first.siblingOrder ?? Number.POSITIVE_INFINITY;
+  const secondOrder = second.siblingOrder ?? Number.POSITIVE_INFINITY;
+  if (firstOrder !== secondOrder) return firstOrder - secondOrder;
+
+  const firstBirth = first.birthDate ? new Date(first.birthDate).getTime() : Number.POSITIVE_INFINITY;
+  const secondBirth = second.birthDate ? new Date(second.birthDate).getTime() : Number.POSITIVE_INFINITY;
+  if (firstBirth !== secondBirth) return firstBirth - secondBirth;
+
+  return sortByName(first, second);
+};
+
+const sharedChildCount = (first: FamilyMember, second: FamilyMember, members: FamilyMember[]) =>
+  members.filter((member) => member.parentIds.includes(first._id) && member.parentIds.includes(second._id)).length;
 
 function PersonBranchCard({ member, onClick }: { member: FamilyMember; onClick: (member: FamilyMember) => void }) {
+  const rememberedChild = member.lifeStatus === 'pregnancy-loss';
+
   return (
-    <article className="family-card">
-      <button type="button" className="family-card__main" onClick={() => onClick(member)}>
+    <article className={`family-card ${rememberedChild ? 'family-card--remembered' : ''}`}>
+      <div className="family-card__main">
         <span className="family-card__photo">
-          {member.profileImage ? <img src={member.profileImage} alt={fullName(member)} /> : initials(member)}
+          {member.profileImage ? <img src={member.profileImage} alt={fullName(member)} /> : rememberedChild ? <Heart size={34} /> : initials(member)}
         </span>
         <span className="family-card__body">
           <strong>{fullName(member)}</strong>
-          <small>{years(member)}</small>
+          <small>{familyCardDateLabel(member)}</small>
         </span>
-      </button>
+      </div>
+      <div className="family-card__actions">
+        <button type="button" className="family-card__view" onClick={() => onClick(member)}>
+          <Eye size={14} /> View
+        </button>
+      </div>
       <DropdownMenu.Root>
         <DropdownMenu.Trigger className="family-card__menu" aria-label={`Open menu for ${fullName(member)}`}>
           <MoreVertical size={16} />
@@ -50,16 +64,9 @@ function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMemb
   const children = members
     .filter((member) => member.parentIds.includes(owner._id))
     .filter((member) => member._id !== owner._id)
-    .sort(sortByName);
+    .sort(sortByFamilyOrder);
 
-  const coParentIds = new Set<string>(owner.spouseIds);
-  children.forEach((child) => {
-    child.parentIds.forEach((parentId) => {
-      if (parentId !== owner._id) coParentIds.add(parentId);
-    });
-  });
-
-  const partners = [...coParentIds]
+  const partners = owner.spouseIds
     .map((partnerId) => memberById.get(partnerId))
     .filter((member): member is FamilyMember => {
       if (!member) return false;
@@ -72,7 +79,7 @@ function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMemb
 
   return (
     <div className={`branch-unit ${depth > 0 ? 'branch-unit--nested' : ''}`}>
-      <div className="branch-family-row">
+      <div className={`branch-family-row ${visibleChildren.length ? 'branch-family-row--has-children' : ''}`}>
         <PersonBranchCard member={owner} onClick={onSelect} />
         {partners.map((partner) => <PersonBranchCard key={partner._id} member={partner} onClick={onSelect} />)}
       </div>
@@ -106,15 +113,30 @@ function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMemb
 function buildRootTree(data: TreeData) {
   const visibleMembers = data.members.filter((member) => !member.hideInTree);
   const visibleById = new Map(visibleMembers.map((member) => [member._id, member]));
-  const roots = visibleMembers.filter((member) => !member.parentIds.some((parentId) => visibleById.has(parentId)) && member.generation === 1);
-  const rootA = roots.find((member) => member.spouseIds.some((spouseId) => visibleById.has(spouseId))) || roots[0];
+  const roots = visibleMembers.filter((member) => !member.parentIds.some((parentId) => visibleById.has(parentId)));
+  const rootIds = new Set(roots.map((member) => member._id));
+  const rootCouples = roots
+    .flatMap((member) =>
+      member.spouseIds
+        .map((spouseId) => visibleById.get(spouseId))
+        .filter((spouse): spouse is FamilyMember => Boolean(spouse))
+        .filter((spouse) => rootIds.has(spouse._id))
+        .map((spouse) => ({
+          rootA: member,
+          rootB: spouse,
+          score: sharedChildCount(member, spouse, visibleMembers),
+        })),
+    )
+    .sort((first, second) => second.score - first.score || sortByName(first.rootA, second.rootA));
+
+  const rootA = rootCouples[0]?.rootA || roots.find((member) => member.spouseIds.some((spouseId) => visibleById.has(spouseId))) || roots[0];
   if (!rootA) return { rootA: undefined, rootB: undefined, children: [] as FamilyMember[], visibleMembers };
 
-  const rootB = rootA.spouseIds.map((spouseId) => visibleById.get(spouseId)).find((member): member is FamilyMember => Boolean(member));
-  const rootIds = new Set([rootA._id, rootB?._id].filter(Boolean) as string[]);
+  const rootB = rootCouples[0]?.rootB || rootA.spouseIds.map((spouseId) => visibleById.get(spouseId)).find((member): member is FamilyMember => Boolean(member));
+  const selectedRootIds = new Set([rootA._id, rootB?._id].filter(Boolean) as string[]);
   const children = visibleMembers
-    .filter((member) => member.parentIds.some((parentId) => rootIds.has(parentId)))
-    .sort(sortByName);
+    .filter((member) => member.parentIds.some((parentId) => selectedRootIds.has(parentId)))
+    .sort(sortByFamilyOrder);
 
   return { rootA, rootB, children, visibleMembers };
 }

@@ -54,24 +54,37 @@ button, a { transition: all .2s ease; }
 .custom-tree { min-width: max-content; padding: 52px 44px 70px; }
 .custom-tree__roots, .branch-family-row { position: relative; display: flex; justify-content: center; gap: 4px; width: max-content; margin: 0 auto; }
 .custom-tree__roots::after { content: ''; position: absolute; left: 50%; bottom: -36px; width: 2px; height: 36px; background: rgba(255,196,196,.42); transform: translateX(-50%); }
-.root-branches { position: relative; display: flex; align-items: flex-start; gap: 20px; margin-top: 36px; padding-top: 18px; }
-.root-branches::before { content: ''; position: absolute; top: 0; left: 88px; right: 88px; height: 2px; background: rgba(255,196,196,.42); }
+.root-branches { position: relative; display: flex; align-items: flex-start; gap: 32px; margin-top: 36px; padding-top: 18px; }
+.root-branches::before { display: none; }
+.root-branches > .branch-unit::after { content: ''; position: absolute; top: -18px; left: calc(-50% - 16px); right: calc(-50% - 16px); height: 2px; background: rgba(255,196,196,.42); }
+.root-branches > .branch-unit:first-child::after { left: 50%; }
+.root-branches > .branch-unit:last-child::after { right: 50%; }
+.root-branches > .branch-unit:only-child::after { display: none; }
 .branch-unit { position: relative; display: flex; min-width: 210px; flex-direction: column; align-items: center; }
 .branch-unit::before { content: ''; position: absolute; top: -18px; left: 50%; width: 2px; height: 18px; background: rgba(255,196,196,.42); transform: translateX(-50%); }
 .branch-unit--nested { min-width: 190px; }
-.branch-unit--nested::before, .branch-leaf::before { content: ''; position: absolute; top: -30px; left: 50%; width: 2px; height: 30px; background: rgba(255,196,196,.34); transform: translateX(-50%); }
-.branch-family-row::after { content: ''; position: absolute; left: 50%; bottom: -30px; width: 2px; height: 30px; background: rgba(255,196,196,.34); transform: translateX(-50%); }
-.branch-children { position: relative; display: flex; justify-content: center; gap: 14px; margin-top: 58px; padding-top: 30px; }
-.branch-children::before { content: ''; position: absolute; top: 0; left: 64px; right: 64px; height: 2px; background: rgba(255,196,196,.34); }
+.branch-unit--nested::before, .branch-leaf::before { content: ''; position: absolute; top: -26px; left: 50%; width: 2px; height: 26px; background: rgba(255,196,196,.34); transform: translateX(-50%); }
+.branch-family-row--has-children::after { content: ''; position: absolute; left: 50%; bottom: -26px; width: 2px; height: 26px; background: rgba(255,196,196,.34); transform: translateX(-50%); }
+.branch-children { position: relative; display: flex; justify-content: center; gap: 18px; margin-top: 26px; padding-top: 26px; }
+.branch-children::before { display: none; }
+.branch-children > .branch-unit::after, .branch-children > .branch-leaf::after { content: ''; position: absolute; top: -26px; left: calc(-50% - 9px); right: calc(-50% - 9px); height: 2px; background: rgba(255,196,196,.34); }
+.branch-children > .branch-unit:first-child::after, .branch-children > .branch-leaf:first-child::after { left: 50%; }
+.branch-children > .branch-unit:last-child::after, .branch-children > .branch-leaf:last-child::after { right: 50%; }
+.branch-children > .branch-unit:only-child::after, .branch-children > .branch-leaf:only-child::after { display: none; }
 .branch-leaf { position: relative; }
-.family-card { position: relative; display: grid; width: 180px; min-height: 224px; overflow: hidden; border: 1px solid rgba(255,255,255,.68); border-radius: 20px; background: #fff8f5; text-align: center; box-shadow: 0 16px 34px rgba(0,0,0,.24); }
+.family-card { position: relative; display: grid; width: 190px; min-height: 284px; overflow: hidden; border: 1px solid rgba(255,255,255,.68); border-radius: 20px; background: #fff8f5; text-align: center; box-shadow: 0 16px 34px rgba(0,0,0,.24); }
+.family-card--remembered { border-color: rgba(206,38,38,.18); background: #fbf3ef; box-shadow: 0 14px 30px rgba(0,0,0,.18); }
 .family-card:hover { transform: translateY(-3px); border-color: rgba(255,214,214,.95); box-shadow: 0 20px 42px rgba(0,0,0,.3); }
-.family-card__main { display: grid; width: 100%; text-align: center; }
-.family-card__photo { display: grid; width: 100%; height: 132px; place-items: center; overflow: hidden; background: linear-gradient(145deg,#CE2626,#7f1d1d); color: white; font-size: 28px; font-weight: 800; }
-.family-card__photo img { width: 100%; height: 100%; object-fit: cover; }
+.family-card__main { display: grid; width: 100%; justify-items: center; padding-top: 14px; text-align: center; }
+.family-card__photo { display: grid; width: 152px; height: 146px; place-items: center; overflow: hidden; border: 5px solid white; border-radius: 24px; background: linear-gradient(145deg,#CE2626,#7f1d1d); color: white; font-size: 28px; font-weight: 800; box-shadow: 0 12px 24px rgba(48,31,33,.14); }
+.family-card--remembered .family-card__photo { background: #f4ded8; color: #CE2626; }
+.family-card__photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 32%; }
 .family-card__body { display: block; min-width: 0; padding: 14px 14px 16px; }
 .family-card strong { display: -webkit-box; min-height: 42px; overflow: hidden; color: #301f21; font-size: 15px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.family-card small { display: block; margin-top: 6px; color: rgba(48,31,33,.48); font-size: 12px; }
+.family-card small { display: block; margin-top: 6px; color: rgba(48,31,33,.48); font-size: 11.5px; line-height: 1.35; }
+.family-card__actions { display: flex; align-items: end; justify-content: center; padding: 0 14px 14px; }
+.family-card__view { display: inline-flex; width: 100%; align-items: center; justify-content: center; gap: 6px; border-radius: 999px; background: #CE2626; padding: 9px 12px; color: white; font-size: 12px; font-weight: 800; box-shadow: 0 8px 18px rgba(206,38,38,.22); }
+.family-card__view:hover { background: #a91f1f; }
 .family-card__menu { position: absolute; top: 8px; right: 8px; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 999px; background: rgba(255,248,245,.88); color: #CE2626; box-shadow: 0 8px 18px rgba(0,0,0,.12); }
 .family-card__menu:hover, .family-card__menu[data-state='open'] { background: #CE2626; color: white; }
 .family-card-menu { z-index: 120; min-width: 150px; overflow: hidden; border: 1px solid rgba(74,16,24,.12); border-radius: 14px; background: white; padding: 6px; box-shadow: 0 16px 40px rgba(48,31,33,.16); }
@@ -88,7 +101,7 @@ button, a { transition: all .2s ease; }
   .hero-carousel__controls { bottom: 1rem; gap: 9px; max-width: calc(100% - 1.5rem); }
   .tree-canvas { min-height: 620px; height: 70vh; border-radius: 1.4rem; }
   .custom-tree { padding: 34px 22px 54px; }
-  .root-branches { gap: 12px; }
-  .family-card { width: 154px; min-height: 196px; }
-  .family-card__photo { height: 116px; }
+  .root-branches { gap: 18px; }
+  .family-card { width: 164px; min-height: 260px; }
+  .family-card__photo { width: 132px; height: 128px; }
 }

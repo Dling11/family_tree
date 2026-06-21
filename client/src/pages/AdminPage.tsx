@@ -8,13 +8,26 @@ import { useFamilyGroups } from '../hooks/useFamilyGroups';
 import type { DashboardImage, FamilyGroup, FamilyMember } from '../types';
 
 type FormState = Partial<FamilyMember> & { image?: File };
-type QuickMemberDraft = Pick<FamilyMember, 'firstName' | 'lastName'> & Partial<Pick<FamilyMember, 'branch' | 'generation'>>;
-const emptyForm: FormState = { firstName: '', lastName: '', parentIds: [], spouseIds: [], isLiving: true, generation: 1 };
+type QuickMemberDraft = Pick<FamilyMember, 'firstName' | 'lastName'> & Partial<Pick<FamilyMember, 'branch'>>;
+const emptyForm: FormState = { firstName: '', lastName: '', parentIds: [], spouseIds: [], isLiving: true };
 const fullName = (member: FamilyMember) => `${member.firstName} ${member.lastName}`;
 type AdminMemberGroup = { id: string; members: FamilyMember[] };
+const genderLabel = (gender?: FamilyMember['gender']) => {
+  if (gender === 'male') return 'Male';
+  if (gender === 'female') return 'Female';
+  if (gender === 'non-binary') return 'Non-binary';
+  if (gender === 'prefer-not-to-say') return 'Prefer not to say';
+  return 'Gender not set';
+};
+const lifeStatusLabel = (status?: FamilyMember['lifeStatus'], isLiving?: boolean) => {
+  if (status === 'pregnancy-loss') return 'Pregnancy loss / unborn child';
+  if (status === 'deceased' || isLiving === false) return 'Deceased';
+  if (status === 'unknown') return 'Unknown';
+  return 'Living';
+};
 
 const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
-const sortMembers = (first: FamilyMember, second: FamilyMember) => (first.generation || 99) - (second.generation || 99) || fullName(first).localeCompare(fullName(second));
+const sortMembers = (first: FamilyMember, second: FamilyMember) => fullName(first).localeCompare(fullName(second));
 const pickGroupAnchor = (group: FamilyMember[]) => [...group].sort((first, second) => {
   if (first.parentIds.length !== second.parentIds.length) return second.parentIds.length - first.parentIds.length;
   if ((first.branch === 'Rodriguez') !== (second.branch === 'Rodriguez')) return first.branch === 'Rodriguez' ? -1 : 1;
@@ -34,7 +47,24 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
   const [availableMembers, setAvailableMembers] = useState(members);
   const [saving, setSaving] = useState(false);
   const [imagePreview, setImagePreview] = useState(initial?.profileImage || '');
+  const [childQuery, setChildQuery] = useState('');
+  const [connectingChild, setConnectingChild] = useState(false);
   const set = (field: keyof FormState, value: unknown) => setForm((current) => ({ ...current, [field]: value }));
+  const recordedChildren = useMemo(
+    () => initial ? availableMembers.filter((member) => member.parentIds.includes(initial._id)).sort(sortMembers) : [],
+    [availableMembers, initial],
+  );
+  const childOptions = useMemo(() => {
+    if (!initial) return [];
+    const search = childQuery.trim().toLowerCase();
+    if (!search) return [];
+    return availableMembers
+      .filter((member) => member._id !== initial._id)
+      .filter((member) => !member.parentIds.includes(initial._id))
+      .filter((member) => !search || fullName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search))
+      .sort(sortMembers)
+      .slice(0, 8);
+  }, [availableMembers, childQuery, initial]);
 
   useEffect(() => {
     setAvailableMembers(members);
@@ -55,7 +85,11 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
     e.preventDefault();
     setSaving(true);
     const payload = new FormData();
-    Object.entries(form).forEach(([key, value]) => {
+    const normalizedForm = {
+      ...form,
+      isLiving: form.lifeStatus ? form.lifeStatus === 'living' : form.isLiving,
+    };
+    Object.entries(normalizedForm).forEach(([key, value]) => {
       if (key === 'image' && value instanceof File) payload.append('image', value);
       else if (['parentIds', 'spouseIds'].includes(key)) payload.append(key, JSON.stringify(value || []));
       else if (value !== undefined && value !== null) payload.append(key, String(value));
@@ -75,7 +109,6 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
     payload.append('lastName', draft.lastName);
     payload.append('isLiving', 'true');
     if (draft.branch) payload.append('branch', draft.branch);
-    if (draft.generation) payload.append('generation', String(draft.generation));
 
     const member = await createMember(payload);
     setAvailableMembers((current) => [...current, member]);
@@ -88,6 +121,25 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
     set('branch', group.name);
     onFamilyGroupSaved();
     return group;
+  };
+
+  const connectExistingChild = async (child: FamilyMember) => {
+    if (!initial || child.parentIds.includes(initial._id)) return;
+    setConnectingChild(true);
+    const payload = new FormData();
+    payload.append('parentIds', JSON.stringify([...child.parentIds, initial._id]));
+    payload.append('spouseIds', JSON.stringify(child.spouseIds || []));
+    payload.append('isLiving', String(child.isLiving ?? true));
+    if (child.lifeStatus) payload.append('lifeStatus', child.lifeStatus);
+    payload.append('featured', String(child.featured ?? false));
+    payload.append('hideInTree', String(child.hideInTree ?? false));
+    try {
+      const updated = await updateMember(child._id, payload);
+      setAvailableMembers((current) => current.map((member) => member._id === updated._id ? updated : member));
+      setChildQuery('');
+    } finally {
+      setConnectingChild(false);
+    }
   };
 
   return (
@@ -112,12 +164,20 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
           <Field label="Last name" required value={form.lastName} placeholder="Example: Delrosario" onChange={(v) => set('lastName', v)} />
           <Field label="Middle name" value={form.middleName} placeholder="Optional, example: Rodriguez" onChange={(v) => set('middleName', v)} />
           <Field label="Nickname" value={form.nickname} placeholder="Optional, example: Weng" onChange={(v) => set('nickname', v)} />
+          <GenderPicker value={form.gender || ''} onChange={(value) => set('gender', value)} />
+          <LifeStatusPicker
+            value={form.lifeStatus || (form.isLiving === false ? 'deceased' : 'living')}
+            onChange={(value) => {
+              set('lifeStatus', value);
+              set('isLiving', value === 'living');
+            }}
+          />
+          <Field label="Sibling order" type="number" value={form.siblingOrder ?? ''} placeholder="Example: 1 for eldest" onChange={(v) => set('siblingOrder', v)} />
           <Field label="Birth date" type="date" value={form.birthDate?.slice(0, 10)} onChange={(v) => set('birthDate', v)} />
           <Field label="Death date" type="date" value={form.deathDate?.slice(0, 10)} onChange={(v) => set('deathDate', v)} />
           <Field label="Birth place" value={form.birthPlace} placeholder="Example: Malaang, Philippines" onChange={(v) => set('birthPlace', v)} />
           <Field label="Occupation" value={form.occupation} placeholder="Example: Teacher, Farmer, Nurse" onChange={(v) => set('occupation', v)} />
           <FamilyGroupPicker value={form.branch || ''} groups={familyGroups} onChange={(value) => set('branch', value)} onCreate={addFamilyGroup} />
-          <Field label="Generation" type="number" value={form.generation} onChange={(v) => set('generation', Number(v))} />
         </div>
         <div className="mt-6 rounded-3xl border border-clay/15 bg-white/65 p-5">
           <p className="text-sm font-bold text-forest">How this person connects</p>
@@ -133,7 +193,7 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
               selected={form.parentIds || []}
               currentId={initial?._id}
               onChange={(ids) => set('parentIds', ids)}
-              quickDefaults={{ branch: form.branch, generation: Math.max(1, Number(form.generation || 2) - 1) }}
+              quickDefaults={{ branch: form.branch }}
               onCreate={(draft) => createRelatedMember(draft, 'parentIds')}
             />
             <RelationPicker
@@ -143,14 +203,71 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
               selected={form.spouseIds || []}
               currentId={initial?._id}
               onChange={(ids) => set('spouseIds', ids)}
-              quickDefaults={{ branch: form.branch, generation: Number(form.generation || 1) }}
+              quickDefaults={{ branch: form.branch }}
               onCreate={(draft) => createRelatedMember(draft, 'spouseIds')}
             />
           </div>
+          {initial && (
+            <div className="mt-5 rounded-2xl border border-forest/10 bg-white/70 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-ink">Children recorded under this person</p>
+                  <p className="mt-1 text-xs leading-5 text-ink/45">
+                    These are found from child records where this person is selected as a parent.
+                  </p>
+                </div>
+                <span className="rounded-full bg-clay/10 px-2.5 py-1 text-xs font-bold text-clay">{recordedChildren.length}</span>
+              </div>
+              {recordedChildren.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recordedChildren.map((child) => (
+                    <span key={child._id} className="rounded-full bg-cream px-3 py-1.5 text-xs font-semibold text-ink/70">
+                      {fullName(child)}{child.hideInTree ? ' - hidden' : ''}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 rounded-2xl border border-dashed border-forest/15 bg-cream/70 px-4 py-4 text-center text-xs text-ink/40">
+                  No children are connected yet.
+                </p>
+              )}
+              <div className="mt-4 rounded-2xl bg-cream/70 p-4">
+                <p className="text-xs font-bold uppercase tracking-[.12em] text-ink/40">Add existing child</p>
+                <input
+                  className="admin-input mt-3"
+                  value={childQuery}
+                  onChange={(event) => setChildQuery(event.target.value)}
+                  placeholder="Search existing person, example: Rowell"
+                />
+                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1">
+                  {childOptions.map((child) => (
+                    <button
+                      key={child._id}
+                      type="button"
+                      onClick={() => connectExistingChild(child)}
+                      disabled={connectingChild}
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-forest/10 bg-white px-4 py-3 text-left text-sm text-ink/70 hover:border-clay/30 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <span>
+                        <strong className="block text-ink">{fullName(child)}</strong>
+                        <small className="text-ink/40">{child.branch || 'No family group'}</small>
+                      </span>
+                      <span className="rounded-full bg-clay px-3 py-1 text-xs font-bold text-white">Add</span>
+                    </button>
+                  ))}
+                  {!childOptions.length && (
+                    <p className="rounded-2xl border border-dashed border-forest/15 bg-white/60 px-4 py-4 text-center text-xs text-ink/40">
+                      {childQuery.trim() ? 'No available existing person found.' : 'Search first before selecting a child.'}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <label className="mt-5 block text-sm font-semibold text-ink">Biography<textarea value={form.biography || ''} onChange={(e) => set('biography', e.target.value)} rows={5} className="admin-input mt-2 resize-none" placeholder="Add short memories, family notes, or important life details..." /></label>
         <div className="mt-5 grid gap-3 rounded-2xl bg-white/60 p-4 text-sm text-ink">
-          <label className="flex items-center gap-3"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => set('isLiving', e.target.checked)} /> This person is living</label>
+          <label className="flex items-center gap-3"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => { set('isLiving', e.target.checked); set('lifeStatus', e.target.checked ? 'living' : 'deceased'); }} /> This person is living</label>
           <label className="flex items-start gap-3">
             <input className="mt-1" type="checkbox" checked={form.hideInTree ?? false} onChange={(e) => set('hideInTree', e.target.checked)} />
             <span><strong className="block font-semibold">Hide card from public tree</strong><small className="text-ink/45">Use this for a parent you want stored in records but not shown as a visible card.</small></span>
@@ -164,6 +281,35 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
 
 function Field({ label, value, onChange, type = 'text', required = false, placeholder }: { label: string; value: unknown; onChange: (value: string) => void; type?: string; required?: boolean; placeholder?: string }) {
   return <label className="text-sm font-semibold text-ink">{label}<input className="admin-input mt-2" type={type} required={required} placeholder={placeholder} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} /></label>;
+}
+
+function GenderPicker({ value, onChange }: { value: string; onChange: (value: FamilyMember['gender'] | '') => void }) {
+  return (
+    <label className="text-sm font-semibold text-ink">
+      Gender
+      <select className="admin-input mt-2" value={value} onChange={(event) => onChange(event.target.value as FamilyMember['gender'] | '')}>
+        <option value="">Select gender...</option>
+        <option value="female">Female</option>
+        <option value="male">Male</option>
+        <option value="non-binary">Non-binary</option>
+        <option value="prefer-not-to-say">Prefer not to say</option>
+      </select>
+    </label>
+  );
+}
+
+function LifeStatusPicker({ value, onChange }: { value: string; onChange: (value: FamilyMember['lifeStatus']) => void }) {
+  return (
+    <label className="text-sm font-semibold text-ink">
+      Life status
+      <select className="admin-input mt-2" value={value} onChange={(event) => onChange(event.target.value as FamilyMember['lifeStatus'])}>
+        <option value="living">Living</option>
+        <option value="deceased">Deceased</option>
+        <option value="pregnancy-loss">Pregnancy loss / unborn child</option>
+        <option value="unknown">Unknown</option>
+      </select>
+    </label>
+  );
 }
 
 function FamilyGroupPicker({ value, groups, onChange, onCreate }: { value: string; groups: FamilyGroup[]; onChange: (value: string) => void; onCreate: (name: string) => Promise<FamilyGroup> }) {
@@ -215,7 +361,7 @@ function RelationPicker({
   selected: string[];
   currentId?: string;
   onChange: (ids: string[]) => void;
-  quickDefaults?: Partial<Pick<FamilyMember, 'branch' | 'generation'>>;
+  quickDefaults?: Partial<Pick<FamilyMember, 'branch'>>;
   onCreate?: (draft: QuickMemberDraft) => Promise<FamilyMember>;
 }) {
   const [query, setQuery] = useState('');
@@ -223,10 +369,13 @@ function RelationPicker({
   const [quickLastName, setQuickLastName] = useState('');
   const [creating, setCreating] = useState(false);
   const selectedSet = new Set(selected);
-  const options = members
-    .filter((member) => member._id !== currentId)
-    .filter((member) => fullName(member).toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 12);
+  const search = query.trim().toLowerCase();
+  const options = search
+    ? members
+      .filter((member) => member._id !== currentId)
+      .filter((member) => fullName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search))
+      .slice(0, 12)
+    : [];
   const selectedMembers = members.filter((member) => selectedSet.has(member._id));
 
   const toggle = (memberId: string) => {
@@ -242,7 +391,6 @@ function RelationPicker({
         firstName: quickFirstName.trim(),
         lastName: quickLastName.trim(),
         branch: quickDefaults?.branch,
-        generation: quickDefaults?.generation,
       });
       setQuery(fullName(member));
       setQuickFirstName('');
@@ -283,13 +431,17 @@ function RelationPicker({
             >
               <span>
                 <strong className="block text-ink">{fullName(member)}</strong>
-                <small className="text-ink/40">{member.branch || 'No branch'} - Generation {member.generation || 'unknown'}</small>
+                <small className="text-ink/40">{member.branch || 'No family group'}</small>
               </span>
               <span className={`grid size-5 place-items-center rounded-full border text-[10px] font-bold ${checked ? 'border-clay bg-clay text-white' : 'border-forest/20 text-transparent'}`}>{checked ? 'OK' : ''}</span>
             </button>
           );
         })}
-        {!options.length && <p className="rounded-2xl border border-dashed border-forest/15 bg-white/60 px-4 py-5 text-center text-xs text-ink/40">No matching family member found.</p>}
+        {!options.length && (
+          <p className="rounded-2xl border border-dashed border-forest/15 bg-white/60 px-4 py-5 text-center text-xs text-ink/40">
+            {search ? 'No matching family member found.' : 'Search first before selecting a connection.'}
+          </p>
+        )}
       </div>
       {onCreate && (
         <div className="mt-4 rounded-2xl border border-dashed border-clay/25 bg-white/70 p-4">
@@ -473,7 +625,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     reload();
   };
   const addChild = (parent: FamilyMember) => {
-    setPreset({ ...emptyForm, parentIds: [parent._id], generation: (parent.generation || 1) + 1, branch: parent.branch });
+    setPreset({ ...emptyForm, parentIds: [parent._id], branch: parent.branch });
     setEditing(null);
   };
 
@@ -516,8 +668,13 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <MemberAvatar member={member} />
                       <div><strong className="block text-ink">{fullName(member)}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
                     </div>
-                    <div className="text-sm text-ink/50"><p>{member.occupation || 'No occupation recorded'}</p><small>{member.birthDate ? new Date(member.birthDate).getFullYear() : 'Birth year unknown'}</small></div>
-                    <span className="text-sm text-ink/60">Gen {member.generation || '-'}</span>
+                    <div className="text-sm text-ink/50">
+                      <p>{member.occupation || 'No occupation recorded'}</p>
+                      <small>
+                        {genderLabel(member.gender)} • {lifeStatusLabel(member.lifeStatus, member.isLiving)} • {member.siblingOrder ? `Child order ${member.siblingOrder}` : 'Order not set'} • {member.birthDate ? new Date(member.birthDate).getFullYear() : 'Birth year unknown'}
+                      </small>
+                    </div>
+                    <span className="text-sm text-ink/60">{member.hideInTree ? 'Hidden' : 'Visible'}</span>
                     <div className="flex gap-2">
                       <button onClick={() => addChild(member)} className="admin-icon text-clay" aria-label={`Add child under ${fullName(member)}`} title="Add child"><Plus size={16} /></button>
                       <button onClick={() => { setPreset(undefined); setEditing(member); }} className="admin-icon" aria-label={`Edit ${fullName(member)}`} title="Edit"><Pencil size={16} /></button>

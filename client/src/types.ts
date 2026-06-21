@@ -6,6 +6,7 @@ export interface FamilyMember {
   maidenName?: string;
   nickname?: string;
   gender?: 'male' | 'female' | 'non-binary' | 'prefer-not-to-say';
+  lifeStatus?: 'living' | 'deceased' | 'pregnancy-loss' | 'unknown';
   birthDate?: string;
   deathDate?: string;
   birthPlace?: string;
@@ -16,6 +17,7 @@ export interface FamilyMember {
   parentIds: string[];
   spouseIds: string[];
   branch?: string;
+  siblingOrder?: number;
   generation?: number;
   isLiving?: boolean;
   featured?: boolean;

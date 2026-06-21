@@ -5,6 +5,13 @@ import { DashboardCarousel } from '../components/ui/DashboardCarousel';
 import { usePublicDashboardImages } from '../hooks/useDashboardImages';
 import { useFamilyTree } from '../hooks/useFamilyTree';
 
+const familyMemoryWords = [
+  ['RAT', 'Rodrigo, Anita, Teddy'],
+  ['PET', 'Perla, Elvira, Teresita'],
+  ['RED', 'Rowena, Elpidio de-Leon, Daisy'],
+  ['COW', 'Cristina, Ofelia, Wilma'],
+];
+
 export function HomePage() {
   const { tree } = useFamilyTree();
   const dashboardImages = usePublicDashboardImages();
@@ -32,6 +39,28 @@ export function HomePage() {
           ) : (
             <div className="tree-canvas tree-canvas--featured grid place-items-center text-forest/50">Preparing the family tree...</div>
           )}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-5 pb-8 lg:px-8">
+        <div className="rounded-[2rem] border border-clay/15 bg-white p-6 shadow-soft sm:p-8">
+          <div className="grid gap-8 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
+            <div>
+              <p className="eyebrow">Lolo's reminder</p>
+              <h2 className="mt-3 font-display text-4xl text-forest">Rat Pet Red Cow</h2>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-ink/60">
+                A simple phrase our grandfather used for remembering the twelve children in order, from Rodrigo down to Wilma.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              {familyMemoryWords.map(([word, names]) => (
+                <article key={word} className="rounded-3xl bg-cream p-4 text-center">
+                  <strong className="font-display text-3xl text-clay">{word}</strong>
+                  <p className="mt-3 text-xs font-semibold leading-5 text-ink/55">{names}</p>
+                </article>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

@@ -1,5 +1,12 @@
 import { BookOpen, Camera, HeartHandshake } from 'lucide-react';
 
+const childOrderGroups = [
+  { word: 'RAT', names: ['Rodrigo', 'Anita', 'Teddy'] },
+  { word: 'PET', names: ['Perla', 'Elvira', 'Teresita'] },
+  { word: 'RED', names: ['Rowena', 'Elpidio de-Leon', 'Daisy'] },
+  { word: 'COW', names: ['Cristina', 'Ofelia', 'Wilma'] },
+];
+
 export function AboutPage() {
   return (
     <section>
@@ -21,6 +28,27 @@ export function AboutPage() {
               <p className="mt-4 leading-7 text-ink/60">{String(text)}</p>
             </article>
           ))}
+        </div>
+        <div className="mt-16 overflow-hidden rounded-[2rem] border border-clay/15 bg-white shadow-soft">
+          <div className="grid gap-0 lg:grid-cols-[.85fr_1.15fr]">
+            <div className="bg-clay p-8 text-white sm:p-10">
+              <p className="text-xs font-bold uppercase tracking-[.2em] text-white/60">A family way to remember</p>
+              <h2 className="mt-4 font-display text-4xl">Rat Pet Red Cow</h2>
+              <p className="mt-5 leading-7 text-white/75">
+                Lolo used to say the order of their twelve children this way. It sounds funny at first, but it helped the family remember the arrangement from eldest to youngest.
+              </p>
+            </div>
+            <div className="grid gap-4 p-6 sm:grid-cols-2 sm:p-8">
+              {childOrderGroups.map((group) => (
+                <article key={group.word} className="rounded-3xl bg-cream p-5">
+                  <strong className="font-display text-3xl text-clay">{group.word}</strong>
+                  <ol className="mt-4 space-y-2 text-sm font-semibold text-ink/70">
+                    {group.names.map((name) => <li key={name}>{name}</li>)}
+                  </ol>
+                </article>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>
