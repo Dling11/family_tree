@@ -19,6 +19,7 @@ const normalizeBody = (request: Request) => {
   body.spouseIds = parseArray(body.spouseIds);
   body.isLiving = body.isLiving === true || body.isLiving === 'true';
   body.featured = body.featured === true || body.featured === 'true';
+  body.hideInTree = body.hideInTree === true || body.hideInTree === 'true';
   Object.keys(body).forEach((key) => body[key] === '' && delete body[key]);
   return body;
 };

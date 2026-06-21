@@ -19,6 +19,7 @@ export interface FamilyMember {
   generation?: number;
   isLiving?: boolean;
   featured?: boolean;
+  hideInTree?: boolean;
 }
 
 export interface TreeEdge {

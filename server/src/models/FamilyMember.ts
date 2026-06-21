@@ -22,6 +22,7 @@ const familyMemberSchema = new Schema(
     generation: { type: Number, min: 1, max: 20, default: 1, index: true },
     isLiving: { type: Boolean, default: true },
     featured: { type: Boolean, default: false },
+    hideInTree: { type: Boolean, default: false, index: true },
   },
   { timestamps: true },
 );

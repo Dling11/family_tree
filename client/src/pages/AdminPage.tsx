@@ -149,7 +149,13 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
           </div>
         </div>
         <label className="mt-5 block text-sm font-semibold text-ink">Biography<textarea value={form.biography || ''} onChange={(e) => set('biography', e.target.value)} rows={5} className="admin-input mt-2 resize-none" placeholder="Add short memories, family notes, or important life details..." /></label>
-        <label className="mt-5 flex items-center gap-3 text-sm text-ink"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => set('isLiving', e.target.checked)} /> This person is living</label>
+        <div className="mt-5 grid gap-3 rounded-2xl bg-white/60 p-4 text-sm text-ink">
+          <label className="flex items-center gap-3"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => set('isLiving', e.target.checked)} /> This person is living</label>
+          <label className="flex items-start gap-3">
+            <input className="mt-1" type="checkbox" checked={form.hideInTree ?? false} onChange={(e) => set('hideInTree', e.target.checked)} />
+            <span><strong className="block font-semibold">Hide card from public tree</strong><small className="text-ink/45">Use this for a parent you want stored in records but not shown as a visible card.</small></span>
+          </label>
+        </div>
         <div className="mt-8 flex justify-end gap-3"><button type="button" className="button-secondary" onClick={onClose}>Cancel</button><button className="button-primary" disabled={saving}>{saving ? 'Saving...' : 'Save member'}</button></div>
       </form>
     </div>

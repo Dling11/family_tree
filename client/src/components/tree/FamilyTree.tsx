@@ -1,176 +1,174 @@
-import { useCallback, useMemo, useState } from 'react';
-import dagre from '@dagrejs/dagre';
-import {
-  Background,
-  Controls,
-  MarkerType,
-  MiniMap,
-  ReactFlow,
-  type Edge,
-  type Node,
-  type NodeMouseHandler,
-} from '@xyflow/react';
+import { useMemo, useState } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Eye, Minus, MoreVertical, Plus, RotateCcw } from 'lucide-react';
+import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { FamilyMember, TreeData } from '../../types';
-import { PersonNode } from './PersonNode';
 import { PersonModal } from '../ui/PersonModal';
 
-const nodeTypes = { person: PersonNode };
-const width = 230;
-const height = 104;
-const branchGapX = 520;
-const partnerGapX = 275;
-const childGapY = 190;
-const childRowGapY = 148;
+const fullName = (member: FamilyMember) => [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' ');
+const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
+const years = (member: FamilyMember) => {
+  const born = member.birthDate ? new Date(member.birthDate).getFullYear() : '';
+  const died = member.deathDate ? new Date(member.deathDate).getFullYear() : '';
+  if (born && died) return `${born} - ${died}`;
+  if (born) return String(born);
+  if (died) return `d. ${died}`;
+  return 'Year unknown';
+};
+const sortByName = (first: FamilyMember, second: FamilyMember) => fullName(first).localeCompare(fullName(second));
 
-const sortByName = (first: FamilyMember, second: FamilyMember) => `${first.firstName} ${first.lastName}`.localeCompare(`${second.firstName} ${second.lastName}`);
-
-function buildEdges(edges: TreeData['edges'], softParents = false): Edge[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    type: edge.type === 'spouse' ? 'straight' : 'smoothstep',
-    animated: edge.type === 'spouse',
-    label: edge.type === 'spouse' ? '♥' : undefined,
-    style: {
-      stroke: edge.type === 'spouse' ? '#CE2626' : '#a83232',
-      strokeWidth: edge.type === 'spouse' ? 2.5 : 1.6,
-      opacity: edge.type === 'parent' && softParents ? 0.48 : 1,
-    },
-    markerEnd: edge.type === 'parent' ? { type: MarkerType.ArrowClosed, color: '#a83232', width: 14, height: 14 } : undefined,
-    labelStyle: { fill: '#CE2626', fontSize: 16 },
-  }));
+function PersonBranchCard({ member, onClick }: { member: FamilyMember; onClick: (member: FamilyMember) => void }) {
+  return (
+    <article className="family-card">
+      <button type="button" className="family-card__main" onClick={() => onClick(member)}>
+        <span className="family-card__photo">
+          {member.profileImage ? <img src={member.profileImage} alt={fullName(member)} /> : initials(member)}
+        </span>
+        <span className="family-card__body">
+          <strong>{fullName(member)}</strong>
+          <small>{years(member)}</small>
+        </span>
+      </button>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger className="family-card__menu" aria-label={`Open menu for ${fullName(member)}`}>
+          <MoreVertical size={16} />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content className="family-card-menu" sideOffset={8} align="end">
+            <DropdownMenu.Item className="family-card-menu__item" onSelect={() => onClick(member)}>
+              <Eye size={15} /> View details
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </article>
+  );
 }
 
-function rootBranchLayout(data: TreeData): { nodes: Node[]; edges: Edge[] } | null {
-  const roots = data.members.filter((member) => !member.parentIds.length && member.generation === 1);
-  const rootA = roots.find((member) => member.spouseIds.some((spouseId) => roots.some((root) => root._id === spouseId)));
-  if (!rootA) return null;
-
-  const rootB = roots.find((member) => rootA.spouseIds.includes(member._id));
-  if (!rootB) return null;
-
-  const children = data.members
-    .filter((member) => member.parentIds.includes(rootA._id) || member.parentIds.includes(rootB._id))
+function BranchUnit({ owner, members, onSelect, depth = 0 }: { owner: FamilyMember; members: FamilyMember[]; onSelect: (member: FamilyMember) => void; depth?: number }) {
+  const memberById = new Map(members.map((member) => [member._id, member]));
+  const children = members
+    .filter((member) => member.parentIds.includes(owner._id))
+    .filter((member) => member._id !== owner._id)
     .sort(sortByName);
 
-  if (children.length < 4) return null;
-
-  const rootIds = new Set([rootA._id, rootB._id]);
-  const childIds = new Set(children.map((child) => child._id));
-  const memberById = new Map(data.members.map((member) => [member._id, member]));
-  const totalWidth = (children.length - 1) * branchGapX;
-
-  const nodes: Node[] = [];
-  const pushNode = (member: FamilyMember, x: number, y: number) => {
-    if (nodes.some((node) => node.id === member._id)) return;
-    nodes.push({
-      id: member._id,
-      type: 'person',
-      position: { x, y },
-      data: { member },
-    });
-  };
-
-  pushNode(rootA, totalWidth / 2 - width - 18, 20);
-  pushNode(rootB, totalWidth / 2 + 18, 20);
-
-  children.forEach((child, index) => {
-    const baseX = index * branchGapX;
-    const baseY = 300;
-    const directChildren = data.members
-      .filter((member) => !rootIds.has(member._id) && !childIds.has(member._id) && member.parentIds.includes(child._id))
-      .sort(sortByName);
-    const partnerIds = new Set(child.spouseIds);
-
-    directChildren.forEach((descendant) => {
-      descendant.parentIds.forEach((parentId) => {
-        if (parentId !== child._id && !rootIds.has(parentId) && !childIds.has(parentId)) partnerIds.add(parentId);
-      });
-    });
-
-    const partners = [...partnerIds]
-      .map((partnerId) => memberById.get(partnerId))
-      .filter((member): member is FamilyMember => Boolean(member))
-      .sort(sortByName);
-    const partnerIndexById = new Map(partners.map((partner, partnerIndex) => [partner._id, partnerIndex]));
-
-    pushNode(child, baseX, baseY);
-    partners.forEach((partner, partnerIndex) => {
-      pushNode(partner, baseX + partnerGapX * (partnerIndex + 1), baseY);
-    });
-
-    directChildren.forEach((descendant, descendantIndex) => {
-      const coParentId = descendant.parentIds.find((parentId) => parentId !== child._id && partnerIndexById.has(parentId));
-      const coParentIndex = coParentId ? partnerIndexById.get(coParentId) ?? 0 : 0;
-      const childX = coParentId ? baseX + (partnerGapX * (coParentIndex + 1)) / 2 : baseX;
-      pushNode(descendant, childX, baseY + childGapY + descendantIndex * childRowGapY);
+  const coParentIds = new Set<string>(owner.spouseIds);
+  children.forEach((child) => {
+    child.parentIds.forEach((parentId) => {
+      if (parentId !== owner._id) coParentIds.add(parentId);
     });
   });
 
-  const placedIds = new Set(nodes.map((node) => node.id));
-  const parentEdges = [
-    ...children.map((child) => ({
-      id: `branch-${rootA._id}-${child._id}`,
-      source: rootA._id,
-      target: child._id,
-      type: 'parent' as const,
-    })),
-    ...data.edges.filter((edge) => edge.type === 'parent' && placedIds.has(edge.source) && placedIds.has(edge.target) && !rootIds.has(edge.source)),
-  ];
-  const spouseEdges = data.edges.filter((edge) => edge.type === 'spouse' && placedIds.has(edge.source) && placedIds.has(edge.target));
+  const partners = [...coParentIds]
+    .map((partnerId) => memberById.get(partnerId))
+    .filter((member): member is FamilyMember => {
+      if (!member) return false;
+      return member._id !== owner._id && !member.hideInTree;
+    })
+    .sort(sortByName);
 
-  return { nodes, edges: buildEdges([...parentEdges, ...spouseEdges], true) };
+  const childPartners = new Set(partners.map((partner) => partner._id));
+  const visibleChildren = children.filter((child) => !child.hideInTree);
+
+  return (
+    <div className={`branch-unit ${depth > 0 ? 'branch-unit--nested' : ''}`}>
+      <div className="branch-family-row">
+        <PersonBranchCard member={owner} onClick={onSelect} />
+        {partners.map((partner) => <PersonBranchCard key={partner._id} member={partner} onClick={onSelect} />)}
+      </div>
+
+      {!!visibleChildren.length && (
+        <div className="branch-children">
+          {visibleChildren.map((child) => {
+            const hasOwnChildren = members.some((member) => member.parentIds.includes(child._id) && !member.hideInTree);
+            const childHasVisiblePartner = child.spouseIds.some((spouseId) => {
+              const spouse = memberById.get(spouseId);
+              return spouse && !spouse.hideInTree;
+            });
+            const childOnlyBelongsHere = child.parentIds.every((parentId) => parentId === owner._id || childPartners.has(parentId) || memberById.get(parentId)?.hideInTree);
+
+            if ((hasOwnChildren || childHasVisiblePartner) && childOnlyBelongsHere) {
+              return <BranchUnit key={child._id} owner={child} members={members} onSelect={onSelect} depth={depth + 1} />;
+            }
+
+            return (
+              <div key={child._id} className="branch-leaf">
+                <PersonBranchCard member={child} onClick={onSelect} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function dagreLayout(data: TreeData): { nodes: Node[]; edges: Edge[] } {
-  const graph = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: 'TB', ranksep: 110, nodesep: 44, marginx: 40, marginy: 40 });
-  data.members.forEach((member) => graph.setNode(member._id, { width, height }));
-  data.edges.filter((edge) => edge.type === 'parent').forEach((edge) => graph.setEdge(edge.source, edge.target));
-  dagre.layout(graph);
+function buildRootTree(data: TreeData) {
+  const visibleMembers = data.members.filter((member) => !member.hideInTree);
+  const visibleById = new Map(visibleMembers.map((member) => [member._id, member]));
+  const roots = visibleMembers.filter((member) => !member.parentIds.some((parentId) => visibleById.has(parentId)) && member.generation === 1);
+  const rootA = roots.find((member) => member.spouseIds.some((spouseId) => visibleById.has(spouseId))) || roots[0];
+  if (!rootA) return { rootA: undefined, rootB: undefined, children: [] as FamilyMember[], visibleMembers };
 
-  const nodes = data.members.map((member) => {
-    const point = graph.node(member._id) || { x: 0, y: 0 };
-    return {
-      id: member._id,
-      type: 'person',
-      position: { x: point.x - width / 2, y: point.y - height / 2 },
-      data: { member },
-    };
-  });
+  const rootB = rootA.spouseIds.map((spouseId) => visibleById.get(spouseId)).find((member): member is FamilyMember => Boolean(member));
+  const rootIds = new Set([rootA._id, rootB?._id].filter(Boolean) as string[]);
+  const children = visibleMembers
+    .filter((member) => member.parentIds.some((parentId) => rootIds.has(parentId)))
+    .sort(sortByName);
 
-  return { nodes, edges: buildEdges(data.edges) };
-}
-
-function layout(data: TreeData): { nodes: Node[]; edges: Edge[] } {
-  return rootBranchLayout(data) || dagreLayout(data);
+  return { rootA, rootB, children, visibleMembers };
 }
 
 export function FamilyTree({ data, focusId, variant = 'default' }: { data: TreeData; focusId?: string; variant?: 'default' | 'featured' }) {
   const [selected, setSelected] = useState<FamilyMember | null>(null);
-  const laidOut = useMemo(() => layout(data), [data]);
-  const onNodeClick: NodeMouseHandler = useCallback((_, node) => setSelected(node.data.member as FamilyMember), []);
+  const tree = useMemo(() => buildRootTree(data), [data]);
 
   return (
     <>
-      <div className={`tree-canvas ${variant === 'featured' ? 'tree-canvas--featured' : ''}`}>
-        <ReactFlow
-          nodes={laidOut.nodes}
-          edges={laidOut.edges}
-          nodeTypes={nodeTypes}
-          onNodeClick={onNodeClick}
-          fitView
-          fitViewOptions={{ padding: 0.16, nodes: focusId ? [{ id: focusId }] : undefined }}
-          minZoom={0.2}
-          maxZoom={1.7}
-          nodesDraggable={false}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background color="#d8d2ca" gap={28} size={1} />
-          <Controls showInteractive={false} />
-          <MiniMap nodeColor="#CE2626" maskColor="rgba(255,255,255,.75)" />
-        </ReactFlow>
+      <div className={`tree-canvas custom-tree-canvas ${variant === 'featured' ? 'tree-canvas--featured' : ''}`} data-focus-id={focusId || undefined}>
+        {tree.rootA ? (
+          <TransformWrapper
+            initialScale={0.86}
+            minScale={0.35}
+            maxScale={1.8}
+            centerOnInit
+            limitToBounds={false}
+            smooth
+            wheel={{ step: 0.012 }}
+            pinch={{ step: 0.025 }}
+            zoomAnimation={{ animationTime: 260, animationType: 'easeOut' }}
+            velocityAnimation={{ animationTime: 220, animationType: 'easeOut' }}
+            doubleClick={{ disabled: true }}
+          >
+            {({ zoomIn, zoomOut, resetTransform }) => (
+              <>
+                <div className="tree-zoom-controls">
+                  <button type="button" onClick={() => zoomIn(0.18, 180, 'easeOut')} aria-label="Zoom in"><Plus size={16} /></button>
+                  <button type="button" onClick={() => zoomOut(0.18, 180, 'easeOut')} aria-label="Zoom out"><Minus size={16} /></button>
+                  <button type="button" onClick={() => resetTransform(200, 'easeOut')} aria-label="Reset zoom"><RotateCcw size={16} /></button>
+                </div>
+                <TransformComponent wrapperClass="tree-zoom-wrapper" contentClass="tree-zoom-content">
+                  <div className="custom-tree">
+                    <div className="custom-tree__roots">
+                      <PersonBranchCard member={tree.rootA} onClick={setSelected} />
+                      {tree.rootB && <PersonBranchCard member={tree.rootB} onClick={setSelected} />}
+                    </div>
+
+                    {!!tree.children.length && (
+                      <div className="root-branches">
+                        {tree.children.map((child) => (
+                          <BranchUnit key={child._id} owner={child} members={tree.visibleMembers} onSelect={setSelected} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TransformComponent>
+              </>
+            )}
+          </TransformWrapper>
+        ) : (
+          <div className="grid h-full place-items-center p-8 text-center text-sm text-ink/45">No visible family members yet.</div>
+        )}
       </div>
       <PersonModal member={selected} onClose={() => setSelected(null)} />
     </>
