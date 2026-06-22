@@ -8,6 +8,7 @@ interface Props {
 }
 
 const fullName = (member: FamilyMember) => [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' ');
+const displayName = (member: FamilyMember) => member.maidenName ? `${fullName(member)} (${member.maidenName})` : fullName(member);
 const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
 const lifeStatusText = (member: FamilyMember) => {
   if (member.lifeStatus === 'pregnancy-loss') return 'Remembered with love by the family';
@@ -27,7 +28,7 @@ export function PersonModal({ member, onClose }: Props) {
         <div className="grid gap-0 sm:grid-cols-[180px_1fr]">
           <div className="min-h-56 bg-[#f6e9e6]">
             {member.profileImage ? (
-              <img src={member.profileImage} alt={fullName(member)} className="h-full w-full object-cover" />
+              <img src={member.profileImage} alt={displayName(member)} className="h-full w-full object-cover" />
             ) : (
               <div className={`grid h-full min-h-56 place-items-center text-5xl font-bold ${rememberedChild ? 'bg-[#f4ded8] text-clay' : 'bg-gradient-to-br from-clay to-[#7f1d1d] text-white'}`}>
                 {rememberedChild ? <Heart size={52} /> : initials(member)}
@@ -36,8 +37,9 @@ export function PersonModal({ member, onClose }: Props) {
           </div>
           <div className="p-6">
             <p className="text-xs font-bold uppercase tracking-[.16em] text-clay">{member.branch || 'Family group'}</p>
-            <h2 className="mt-2 text-3xl font-bold leading-tight text-ink">{fullName(member)}</h2>
+            <h2 className="mt-2 text-3xl font-bold leading-tight text-ink">{displayName(member)}</h2>
             {member.nickname && <p className="mt-1 text-sm text-ink/50">Known as {member.nickname}</p>}
+            {member.maidenName && <p className="mt-1 text-sm text-ink/50">Maiden / birth family name: {member.maidenName}</p>}
             <div className="my-5 grid gap-3 text-sm text-ink/65">
               {member.birthDate && <p className="flex gap-3"><CalendarDays size={17} className="text-clay" /> Born {formatFullDate(member.birthDate)}</p>}
               {member.deathDate && <p className="flex gap-3"><CalendarDays size={17} className="text-clay" /> {formatYear(member.birthDate) ? `${formatYear(member.birthDate)} - ${formatYear(member.deathDate)}` : `Died ${formatFullDate(member.deathDate)}`}</p>}

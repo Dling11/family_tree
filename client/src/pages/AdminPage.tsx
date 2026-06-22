@@ -9,9 +9,10 @@ import { useFamilyGroups } from '../hooks/useFamilyGroups';
 import type { DashboardImage, FamilyGroup, FamilyMember, TreeData } from '../types';
 
 type FormState = Partial<FamilyMember> & { image?: File };
-type QuickMemberDraft = Pick<FamilyMember, 'firstName' | 'lastName'> & Partial<Pick<FamilyMember, 'branch'>>;
+type QuickMemberDraft = Pick<FamilyMember, 'firstName' | 'lastName'> & Partial<Pick<FamilyMember, 'branch' | 'maidenName'>>;
 const emptyForm: FormState = { firstName: '', lastName: '', parentIds: [], spouseIds: [], isLiving: true };
 const fullName = (member: FamilyMember) => `${member.firstName} ${member.lastName}`;
+const displayName = (member: FamilyMember) => member.maidenName ? `${fullName(member)} (${member.maidenName})` : fullName(member);
 type AdminTab = 'tree' | 'records' | 'carousel';
 type AdminMemberGroup = { id: string; members: FamilyMember[] };
 const genderLabel = (gender?: FamilyMember['gender']) => {
@@ -29,7 +30,7 @@ const lifeStatusLabel = (status?: FamilyMember['lifeStatus'], isLiving?: boolean
 };
 
 const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
-const sortMembers = (first: FamilyMember, second: FamilyMember) => fullName(first).localeCompare(fullName(second));
+const sortMembers = (first: FamilyMember, second: FamilyMember) => displayName(first).localeCompare(displayName(second));
 const pickGroupAnchor = (group: FamilyMember[]) => [...group].sort((first, second) => {
   if (first.parentIds.length !== second.parentIds.length) return second.parentIds.length - first.parentIds.length;
   if ((first.branch === 'Rodriguez') !== (second.branch === 'Rodriguez')) return first.branch === 'Rodriguez' ? -1 : 1;
@@ -63,7 +64,7 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
     return availableMembers
       .filter((member) => member._id !== initial._id)
       .filter((member) => !member.parentIds.includes(initial._id))
-      .filter((member) => !search || fullName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search))
+      .filter((member) => !search || displayName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search))
       .sort(sortMembers)
       .slice(0, 8);
   }, [availableMembers, childQuery, initial]);
@@ -111,6 +112,7 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
     payload.append('lastName', draft.lastName);
     payload.append('isLiving', 'true');
     if (draft.branch) payload.append('branch', draft.branch);
+    if (draft.maidenName) payload.append('maidenName', draft.maidenName);
 
     const member = await createMember(payload);
     setAvailableMembers((current) => [...current, member]);
@@ -165,6 +167,7 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
           <Field label="First name" required value={form.firstName} placeholder="Example: Rowell" onChange={(v) => set('firstName', v)} />
           <Field label="Last name" required value={form.lastName} placeholder="Example: Delrosario" onChange={(v) => set('lastName', v)} />
           <Field label="Middle name" value={form.middleName} placeholder="Optional, example: Rodriguez" onChange={(v) => set('middleName', v)} />
+          <Field label="Maiden / birth family name" value={form.maidenName} placeholder="Optional, example: Sarigumba" onChange={(v) => set('maidenName', v)} />
           <Field label="Nickname" value={form.nickname} placeholder="Optional, example: Weng" onChange={(v) => set('nickname', v)} />
           <GenderPicker value={form.gender || ''} onChange={(value) => set('gender', value)} />
           <LifeStatusPicker
@@ -224,7 +227,7 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
                 <div className="mt-3 flex flex-wrap gap-2">
                   {recordedChildren.map((child) => (
                     <span key={child._id} className="rounded-full bg-cream px-3 py-1.5 text-xs font-semibold text-ink/70">
-                      {fullName(child)}{child.hideInTree ? ' - hidden' : ''}
+                      {displayName(child)}{child.hideInTree ? ' - hidden' : ''}
                     </span>
                   ))}
                 </div>
@@ -251,7 +254,7 @@ function MemberForm({ members, familyGroups, initial, preset, onClose, onSaved, 
                       className="flex w-full items-center justify-between gap-3 rounded-2xl border border-forest/10 bg-white px-4 py-3 text-left text-sm text-ink/70 hover:border-clay/30 disabled:cursor-wait disabled:opacity-60"
                     >
                       <span>
-                        <strong className="block text-ink">{fullName(child)}</strong>
+                        <strong className="block text-ink">{displayName(child)}</strong>
                         <small className="text-ink/40">{child.branch || 'No family group'}</small>
                       </span>
                       <span className="rounded-full bg-clay px-3 py-1 text-xs font-bold text-white">Add</span>
@@ -369,13 +372,14 @@ function RelationPicker({
   const [query, setQuery] = useState('');
   const [quickFirstName, setQuickFirstName] = useState('');
   const [quickLastName, setQuickLastName] = useState('');
+  const [quickMaidenName, setQuickMaidenName] = useState('');
   const [creating, setCreating] = useState(false);
   const selectedSet = new Set(selected);
   const search = query.trim().toLowerCase();
   const options = search
     ? members
       .filter((member) => member._id !== currentId)
-      .filter((member) => fullName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search))
+      .filter((member) => displayName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search))
       .slice(0, 12)
     : [];
   const selectedMembers = members.filter((member) => selectedSet.has(member._id));
@@ -392,11 +396,13 @@ function RelationPicker({
       const member = await onCreate({
         firstName: quickFirstName.trim(),
         lastName: quickLastName.trim(),
+        maidenName: quickMaidenName.trim() || undefined,
         branch: quickDefaults?.branch,
       });
-      setQuery(fullName(member));
+      setQuery(displayName(member));
       setQuickFirstName('');
       setQuickLastName('');
+      setQuickMaidenName('');
     } finally {
       setCreating(false);
     }
@@ -415,7 +421,7 @@ function RelationPicker({
         <div className="mt-3 flex flex-wrap gap-2">
           {selectedMembers.map((member) => (
             <button key={member._id} type="button" onClick={() => toggle(member._id)} className="rounded-full bg-clay px-3 py-1 text-xs font-semibold text-white">
-              {fullName(member)} x
+              {displayName(member)} x
             </button>
           ))}
         </div>
@@ -432,7 +438,7 @@ function RelationPicker({
               className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition ${checked ? 'border-clay bg-clay/10 text-forest' : 'border-forest/10 bg-white text-ink/65 hover:border-clay/30'}`}
             >
               <span>
-                <strong className="block text-ink">{fullName(member)}</strong>
+                <strong className="block text-ink">{displayName(member)}</strong>
                 <small className="text-ink/40">{member.branch || 'No family group'}</small>
               </span>
               <span className={`grid size-5 place-items-center rounded-full border text-[10px] font-bold ${checked ? 'border-clay bg-clay text-white' : 'border-forest/20 text-transparent'}`}>{checked ? 'OK' : ''}</span>
@@ -453,6 +459,7 @@ function RelationPicker({
             <input className="admin-input" value={quickFirstName} onChange={(event) => setQuickFirstName(event.target.value)} placeholder="First name" />
             <input className="admin-input" value={quickLastName} onChange={(event) => setQuickLastName(event.target.value)} placeholder="Last name" />
           </div>
+          <input className="admin-input mt-3" value={quickMaidenName} onChange={(event) => setQuickMaidenName(event.target.value)} placeholder="Maiden / birth family name (optional)" />
           <button
             type="button"
             onClick={createQuickMember}
@@ -636,7 +643,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
     if (!search) return groupedMembers;
-    return groupedMembers.filter((group) => group.members.some((member) => fullName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search)));
+    return groupedMembers.filter((group) => group.members.some((member) => displayName(member).toLowerCase().includes(search) || member.branch?.toLowerCase().includes(search)));
   }, [groupedMembers, query]);
   const remove = async (member: FamilyMember) => {
     if (!confirm(`Remove ${member.firstName} ${member.lastName} from the family tree?`)) return;
@@ -735,7 +742,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                   <div className="mb-4 flex items-center justify-between gap-3 border-b border-forest/10 pb-4">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-[.14em] text-ink/35">{group.members.length > 1 ? 'Family unit' : 'Family member'}</p>
-                      <h3 className="mt-1 text-lg font-bold text-ink">{group.members.map((member) => fullName(member)).join(' + ')}</h3>
+                      <h3 className="mt-1 text-lg font-bold text-ink">{group.members.map((member) => displayName(member)).join(' + ')}</h3>
                     </div>
                     <span className="rounded-full bg-clay/10 px-3 py-1 text-xs font-bold text-clay">{group.members.length} record{group.members.length > 1 ? 's' : ''}</span>
                   </div>
@@ -744,7 +751,7 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       <div key={member._id} className="grid gap-4 rounded-2xl bg-cream/55 p-4 md:grid-cols-[1fr_1fr_110px_140px] md:items-center">
                         <div className="flex items-center gap-4">
                           <MemberAvatar member={member} />
-                          <div><strong className="block text-ink">{fullName(member)}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
+                          <div><strong className="block text-ink">{displayName(member)}</strong><small className="text-ink/45">{member.branch || 'Unassigned'} branch</small></div>
                         </div>
                         <div className="text-sm text-ink/50">
                           <p>{member.occupation || 'No occupation recorded'}</p>

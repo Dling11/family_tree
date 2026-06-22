@@ -7,8 +7,9 @@ import { familyCardDateLabel } from '../../utils/dateLabels';
 import { PersonModal } from '../ui/PersonModal';
 
 const fullName = (member: FamilyMember) => [member.firstName, member.middleName, member.lastName].filter(Boolean).join(' ');
+const displayName = (member: FamilyMember) => member.maidenName ? `${fullName(member)} (${member.maidenName})` : fullName(member);
 const initials = (member: FamilyMember) => `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
-const sortByName = (first: FamilyMember, second: FamilyMember) => fullName(first).localeCompare(fullName(second));
+const sortByName = (first: FamilyMember, second: FamilyMember) => displayName(first).localeCompare(displayName(second));
 const sortByFamilyOrder = (first: FamilyMember, second: FamilyMember) => {
   const firstOrder = first.siblingOrder ?? Number.POSITIVE_INFINITY;
   const secondOrder = second.siblingOrder ?? Number.POSITIVE_INFINITY;
@@ -70,10 +71,10 @@ function PersonBranchCard({ member, onClick, actions }: { member: FamilyMember; 
       <span className={`family-card__status ${lifeStatusClass(member)}`} title={member.lifeStatus || (member.isLiving === false ? 'deceased' : 'living')} />
       <div className="family-card__main">
         <span className="family-card__photo">
-          {member.profileImage ? <img src={member.profileImage} alt={fullName(member)} /> : rememberedChild ? <Heart size={34} /> : initials(member)}
+          {member.profileImage ? <img src={member.profileImage} alt={displayName(member)} /> : rememberedChild ? <Heart size={34} /> : initials(member)}
         </span>
         <span className="family-card__body">
-          <strong>{fullName(member)}</strong>
+          <strong>{displayName(member)}</strong>
           <small>{familyCardDateLabel(member)}</small>
         </span>
       </div>
@@ -83,7 +84,7 @@ function PersonBranchCard({ member, onClick, actions }: { member: FamilyMember; 
         </button>
       </div>
       <DropdownMenu.Root>
-        <DropdownMenu.Trigger className="family-card__menu" aria-label={`Open menu for ${fullName(member)}`}>
+        <DropdownMenu.Trigger className="family-card__menu" aria-label={`Open menu for ${displayName(member)}`}>
           <MoreVertical size={16} />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
@@ -155,7 +156,7 @@ function BranchUnit({
             type="button"
             className="branch-add-child"
             onClick={() => actions.onAddChild?.(owner)}
-            aria-label={`Add child under ${fullName(owner)}`}
+            aria-label={`Add child under ${displayName(owner)}`}
           >
             <Plus size={16} />
             {addChildLabel && <span>{addChildLabel}</span>}
